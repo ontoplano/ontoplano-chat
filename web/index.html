@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#1f215d" />
+		<meta name="color-scheme" content="light dark" />
+		<title>Onto</title>
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="icon" href="/icons/icon-192.png" />
+		<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+		<link rel="stylesheet" href="/style.css" />
+	</head>
+	<body>
+		<svg hidden aria-hidden="true">
+			<symbol id="i-mic" viewBox="0 0 24 24">
+				<path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 0 0-8 0v5a4 4 0 0 0 4 4Z" />
+				<path
+					d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+				/>
+			</symbol>
+			<symbol id="i-send" viewBox="0 0 24 24">
+				<path d="M3 11.5 21 3l-8.5 18-2-7.5L3 11.5Z" />
+			</symbol>
+			<symbol id="i-gear" viewBox="0 0 24 24">
+				<path
+					d="M10.3 2h3.4l.5 2.6a7.6 7.6 0 0 1 1.9 1.1l2.5-.9 1.7 3-2 1.7a7.8 7.8 0 0 1 0 2.2l2 1.7-1.7 3-2.5-.9a7.6 7.6 0 0 1-1.9 1.1l-.5 2.6h-3.4l-.5-2.6a7.6 7.6 0 0 1-1.9-1.1l-2.5.9-1.7-3 2-1.7a7.8 7.8 0 0 1 0-2.2l-2-1.7 1.7-3 2.5.9a7.6 7.6 0 0 1 1.9-1.1L10.3 2Zm1.7 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
+				/>
+			</symbol>
+			<symbol id="i-check" viewBox="0 0 24 24">
+				<path
+					d="M4 12.5 9.5 18 20 6"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				/>
+			</symbol>
+			<symbol id="i-x" viewBox="0 0 24 24">
+				<path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+			</symbol>
+			<symbol id="i-link" viewBox="0 0 24 24">
+				<path
+					d="M10 14 14 10M8 16l-1.5 1.5a3.5 3.5 0 0 1-5-5L5 9M16 8l1.5-1.5a3.5 3.5 0 0 1 5 5L19 15"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+				/>
+			</symbol>
+			<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" /></symbol>
+		</svg>
+
+		<header class="top">
+			<span class="name" id="assistantName">Onto</span>
+			<span class="status" id="status" aria-live="polite"></span>
+			<button class="iconbtn" id="openSettings" type="button" data-title="settings" data-label="settings">
+				<svg class="icon"><use href="#i-gear" /></svg>
+			</button>
+		</header>
+
+		<main class="screen" id="screenPair" hidden>
+			<form id="pairForm" class="pair" autocomplete="off">
+				<h1 data-t="pair.title">Pair this phone</h1>
+				<p class="muted" data-t="pair.lead">
+					Run <code>ontoplano-chat pair</code> on the computer and type the code it prints.
+				</p>
+				<label>
+					<span data-t="pair.code">Code</span>
+					<input
+						id="pairCode"
+						class="input code"
+						inputmode="numeric"
+						pattern="[0-9]*"
+						maxlength="6"
+						required
+						autofocus
+					/>
+				</label>
+				<label>
+					<span data-t="pair.name">This phone's name</span>
+					<input id="pairName" class="input" maxlength="60" required />
+				</label>
+				<p class="error" id="pairError" aria-live="polite">&nbsp;</p>
+				<button class="btn primary" type="submit" data-t="pair.go">Pair</button>
+			</form>
+		</main>
+
+		<main class="screen" id="screenChat" hidden>
+			<ol class="log" id="log" aria-live="polite"></ol>
+			<p class="empty" id="empty" data-t="chat.empty">Hold the bar and say something.</p>
+		</main>
+
+		<footer class="composer" id="composer" hidden>
+			<form id="typed" class="typed" autocomplete="off">
+				<input id="text" class="input" data-placeholder="chat.type" placeholder="Or type…" />
+				<button class="iconbtn" type="submit" data-title="chat.send" data-label="chat.send">
+					<svg class="icon"><use href="#i-send" /></svg>
+				</button>
+			</form>
+			<button class="talk" id="talk" type="button" aria-pressed="false">
+				<svg class="icon"><use href="#i-mic" /></svg>
+				<span class="talk-label" id="talkLabel" data-t="chat.hold">Hold to talk</span>
+				<span class="talk-timer" id="talkTimer"></span>
+			</button>
+		</footer>
+
+		<dialog id="settings" class="sheet">
+			<h2 data-t="settings.title">This assistant</h2>
+			<dl class="facts" id="facts"></dl>
+			<label class="row">
+				<input type="checkbox" id="speakReplies" checked />
+				<span data-t="settings.speak">Read replies aloud</span>
+			</label>
+			<label class="row">
+				<input type="checkbox" id="browserEars" />
+				<span data-t="settings.browserEars"
+					>Recognise speech on this phone (goes through the browser's recogniser)</span
+				>
+			</label>
+			<div class="sheet-actions">
+				<button class="btn" type="button" id="showHistory" data-t="settings.history">What was done</button>
+				<button class="btn danger" type="button" id="forget" data-t="settings.forget">Forget this phone</button>
+				<button class="btn danger" type="button" id="forgetReally" hidden data-t="settings.forgetReally">
+					Really forget
+				</button>
+				<button class="btn" type="button" id="closeSettings" data-t="settings.close">Close</button>
+			</div>
+			<p class="muted small" id="version"></p>
+		</dialog>
+
+		<dialog id="history" class="sheet">
+			<h2 data-t="history.title">What was done</h2>
+			<ol class="history" id="historyList"></ol>
+			<div class="sheet-actions">
+				<button class="btn" type="button" id="closeHistory" data-t="settings.close">Close</button>
+			</div>
+		</dialog>
+
+		<script type="module" src="/app.js"></script>
+	</body>
+</html>
