@@ -107,13 +107,20 @@ export function buildEngines(
 	const stt: Stt =
 		c.stt.kind === 'browser'
 			? browserStt
-			: httpStt({ kind: c.stt.kind, url: c.stt.url, path: c.stt.path, model: c.stt.model, language: c.stt.language });
+			: httpStt({
+					kind: c.stt.kind,
+					url: c.stt.url,
+					path: c.stt.path,
+					model: c.stt.model,
+					language: c.stt.language,
+					apiKey: c.stt.apiKey
+				});
 	const tts: Tts =
 		c.tts.kind === 'browser'
 			? browserTts
 			: c.tts.kind === 'piper'
 				? piperTts({ command: c.tts.piperCommand, model: c.tts.piperModel })
-				: openAiTts({ url: c.tts.url, model: c.tts.model, voice: c.tts.voice });
+				: openAiTts({ url: c.tts.url, model: c.tts.model, voice: c.tts.voice, apiKey: c.tts.apiKey });
 	return {
 		llm,
 		stt,

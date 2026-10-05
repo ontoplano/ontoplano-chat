@@ -29,7 +29,10 @@ src/prompt.ts      the system prompt
 src/server.ts      HTTP: the page, the API, the stream, the headers, the limits
 src/engines.ts     the four engines from the config, or the fakes
 src/fakes.ts       a model, ears, voice and app that need nothing installed
-src/cli.ts         serve · pair · devices · revoke · doctor · config
+src/ask.ts         questions on a terminal; a scripted one for the tests
+src/wizard.ts      `setup`: the six questions and the config they become
+src/cli.ts         setup · serve · pair · devices · revoke · doctor · config
+install.sh         the one-line install: clone, build, PATH, then `setup`
 web/               the phone: index.html, app.js, strings.js, style.css, sw.js, icons
 tests/             vitest — every module above, with the fakes
 e2e/               Playwright — the page, at phone and desktop width

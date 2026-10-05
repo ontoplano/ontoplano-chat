@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+
+import { scriptedAsk } from '../src/ask.js';
+import { fromToml } from '../src/config.js';
+import { PROVIDERS } from '../src/constants.js';
+import { renderConfig, runWizard, type Checks } from '../src/wizard.js';
+
+const env = { HOME: '/home/x' } as NodeJS.ProcessEnv;
+
+function checks(over: Partial<Checks> = {}): Checks & { ran: string[] } {
+	const ran: string[] = [];
+	return {
+		ran,
+		app: async () => ({ tools: 38 }),
+		llm: async () => null,
+		has: () => false,
+		run: async (line) => {
+			ran.push(line);
+			return true;
+		},
+		tailscaleName: async () => null,
+		current: {},
+		...over
+	};
+}
+
+describe('the wizard', () => {
+	it('all defaults: Ollama here, Speaches ears, the phone speaks, loopback', async () => {
+		const c = checks();
+		const choices = await runWizard(scriptedAsk(['', 'tok']), c);
+		expect(choices.provider).toBe('ollama');
+		expect(choices.llm).toEqual({ url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', apiKey: '' });
+		expect(choices.stt.kind).toBe('openai');
+		expect(choices.stt.language).toBe('pt');
+		expect(choices.tts.kind).toBe('browser');
+		expect(choices.reach).toBe('loopback');
+		expect(choices.host).toBe('127.0.0.1');
+		const parsed = fromToml(renderConfig(choices), env);
+		expect(parsed.ontoplano.token).toBe('tok');
+		expect(parsed.llm.model).toBe('qwen2.5:7b');
+		expect(parsed.assistant.language).toBe('pt-BR');
+	});
+
+	it('a cloud model: Anthropic with a key, English, behind a proxy', async () => {
+		const answers = [
+			'https://my.onto/', // app
+			'tok',
+			'4', // anthropic
+			'', // endpoint
+			'', // model
+			'sk-ant', // key
+			'4', // ears: browser
+			'1', // voice: phone
+			'Jarvis',
+			'en',
+			'2', // proxy
+			'https://onto.example.com/'
+		];
+		const choices = await runWizard(scriptedAsk(answers), checks());
+		expect(choices.appUrl).toBe('https://my.onto');
+		expect(choices.provider).toBe('anthropic');
+		expect(choices.llm).toEqual({ url: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5', apiKey: 'sk-ant' });
+		expect(choices.stt.kind).toBe('browser');
+		expect(choices.stt.language).toBe('en');
+		expect(choices.name).toBe('Jarvis');
+		expect(choices.publicUrl).toBe('https://onto.example.com');
+		const parsed = fromToml(renderConfig(choices), env);
+		expect(parsed.llm.apiKey).toBe('sk-ant');
+		expect(parsed.server.publicUrl).toBe('https://onto.example.com');
+		expect(parsed.server.insecure).toBe(false);
+	});
+
+	it('offers to install Ollama when it is missing, and to pull the model when it is', async () => {
+		let calls = 0;
+		const c = checks({
+			llm: async () =>
+				++calls === 1 ? 'no model runner' : calls === 2 ? 'model "qwen2.5:7b" is not among the 0' : null,
+			has: (cmd) => cmd === 'ollama' && calls >= 2
+		});
+		const log: string[] = [];
+		await runWizard(scriptedAsk(['', 'tok', '', '', '', 'y', 'y'], log), c);
+		expect(c.ran[0]).toMatch(/ollama\.com\/install/);
+		expect(c.ran[1]).toBe('ollama pull qwen2.5:7b');
+		expect(log.join('\n')).toContain('✓ the model answers');
+	});
+
+	it('a refused token can be retried, and the retry is checked', async () => {
+		let n = 0;
+		const c = checks({ app: async (_u, token) => (token === 'good' ? { tools: 3 } : { problem: `refused ${++n}` }) });
+		const log: string[] = [];
+		const choices = await runWizard(scriptedAsk(['', 'bad', 'y', 'good']), c);
+		expect(choices.token).toBe('good');
+		expect(n).toBe(1);
+		void log;
+	});
+
+	it('Tailscale: takes the tailnet name and offers `tailscale serve`', async () => {
+		const c = checks({ has: (cmd) => cmd === 'tailscale', tailscaleName: async () => 'lobo.tail1234.ts.net' });
+		const choices = await runWizard(scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '1', 'y']), c);
+		expect(choices.reach).toBe('tailscale');
+		expect(choices.publicUrl).toBe('https://lobo.tail1234.ts.net');
+		expect(c.ran).toContain('tailscale serve --bg 1497');
+	});
+
+	it('its own certificate opens the host', async () => {
+		const choices = await runWizard(
+			scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '3', '/c.pem', '/k.pem', 'https://onto.lan']),
+			checks()
+		);
+		expect(choices.reach).toBe('tls');
+		expect(choices.host).toBe('0.0.0.0');
+		expect(choices.tls).toEqual({ cert: '/c.pem', key: '/k.pem' });
+	});
+
+	it('keeps the current token and key when enter is pressed', async () => {
+		const c = checks({
+			current: {
+				token: 'kept',
+				provider: 'openai',
+				llm: { url: 'https://api.openai.com/v1', model: 'gpt-4.1-mini', apiKey: 'sk-kept' }
+			}
+		});
+		const choices = await runWizard(scriptedAsk(['', '', '3', '', '', '']), c);
+		expect(choices.token).toBe('kept');
+		expect(choices.llm.apiKey).toBe('sk-kept');
+	});
+});
+
+describe('the providers', () => {
+	it('cloud ones are https and want a key; local ones are loopback', () => {
+		for (const p of PROVIDERS.filter((p) => p.key !== 'custom')) {
+			if (p.local) expect(p.url).toMatch(/^http:\/\/127\.0\.0\.1/);
+			else {
+				expect(p.url).toMatch(/^https:\/\//);
+				expect(p.needsKey).toBe(true);
+			}
+		}
+		expect(PROVIDERS[0]?.key).toBe('ollama');
+	});
+});

@@ -9,10 +9,18 @@
  *   config     write the example config file, if there is none
  *   version
  */
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { terminalAsk } from './ask.js';
+import { OntoplanoMcp } from './mcp.js';
+import { openAiLlm } from './llm.js';
+import { renderConfig, runWizard, type Checks, type Choices } from './wizard.js';
 
 import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } from './config.js';
+import { PROVIDERS } from './constants.js';
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
 import { Devices } from './pairing.js';
@@ -26,6 +34,7 @@ const stamp = (line: string): void => out(`${new Date().toISOString().slice(11, 
 
 const HELP = `ontoplano-chat ${VERSION} — a local voice assistant for ontoplano
 
+  ontoplano-chat setup      the questions: the app, the model, the ears, the voice, how the phone reaches it
   ontoplano-chat serve      run the server
   ontoplano-chat pair       print a pairing code for a phone (ten minutes, one use)
   ontoplano-chat devices    the paired phones
@@ -201,9 +210,141 @@ function writeConfig(): number {
 	return 0;
 }
 
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+
+/** A shell line, with the terminal attached — for installs the wizard offers. */
+function shell(line: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const child = spawn('sh', ['-c', line], { stdio: 'inherit' });
+		child.on('error', () => resolve(false));
+		child.on('close', (code) => resolve(code === 0));
+	});
+}
+
+function has(command: string): boolean {
+	return (process.env.PATH ?? '').split(':').some((dir) => dir && existsSync(join(dir, command)));
+}
+
+async function tailscaleName(): Promise<string | null> {
+	return new Promise((resolve) => {
+		const child = spawn('tailscale', ['status', '--json'], { stdio: ['ignore', 'pipe', 'ignore'] });
+		let out = '';
+		child.stdout.on('data', (c: Buffer) => (out += c.toString()));
+		child.on('error', () => resolve(null));
+		child.on('close', () => {
+			try {
+				const name = (JSON.parse(out) as { Self?: { DNSName?: string } }).Self?.DNSName?.replace(/\.$/, '');
+				resolve(name || null);
+			} catch {
+				resolve(null);
+			}
+		});
+	});
+}
+
+/** What the config says now, as the wizard's defaults. */
+function currentChoices(c: Config): Partial<Choices> {
+	const provider = PROVIDERS_BY_URL(c.llm.url);
+	return {
+		appUrl: c.ontoplano.url,
+		token: c.ontoplano.token,
+		provider,
+		llm: { url: c.llm.url, model: c.llm.model, apiKey: c.llm.apiKey },
+		stt: { kind: c.stt.kind, url: c.stt.url, model: c.stt.model, language: c.stt.language, apiKey: c.stt.apiKey },
+		tts: {
+			kind: c.tts.kind,
+			url: c.tts.url,
+			model: c.tts.model,
+			voice: c.tts.voice,
+			apiKey: c.tts.apiKey,
+			piperModel: c.tts.piperModel
+		},
+		name: c.assistant.name,
+		language: c.assistant.language,
+		publicUrl: c.server.publicUrl,
+		port: c.server.port,
+		tls: c.server.tls,
+		reach: c.server.tls.cert
+			? 'tls'
+			: c.server.publicUrl
+				? c.server.publicUrl.includes('.ts.net')
+					? 'tailscale'
+					: 'proxy'
+				: undefined
+	};
+}
+
+function PROVIDERS_BY_URL(url: string): string | undefined {
+	return PROVIDERS.find((p) => p.url && p.url === url)?.key ?? (url ? 'custom' : undefined);
+}
+
+async function setup(): Promise<number> {
+	const c = config();
+	const ask = terminalAsk();
+	const checks: Checks = {
+		async app(url, token) {
+			try {
+				const tools = await new OntoplanoMcp(url, token).listTools();
+				return { tools: tools.length };
+			} catch (e) {
+				return { problem: (e as Error).message };
+			}
+		},
+		llm: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).check(),
+		has,
+		run: shell,
+		tailscaleName,
+		current: existsSync(c.configPath) ? currentChoices(c) : {}
+	};
+	const choices = await runWizard(ask, checks);
+	mkdirSync(dirname(c.configPath), { recursive: true, mode: 0o700 });
+	writeFileSync(c.configPath, renderConfig(choices), { mode: 0o600 });
+	out('');
+	out(`✓ wrote ${c.configPath}`);
+	out('');
+	const fresh = config();
+	const problems = checkForServing(fresh);
+	for (const p of problems) out(`  ✗ ${p}`);
+	if (choices.reach === 'loopback')
+		out('  The phone cannot reach this computer yet; run setup again when it can, or edit [server] by hand.');
+	if (await ask.yes('Run it as a service from now on (systemd --user)?', has('systemctl'))) await installService();
+	out('');
+	out('Now pair the phone:');
+	pair();
+	out('');
+	out(
+		choices.reach === 'loopback'
+			? 'Start it with: ontoplano-chat serve'
+			: 'If it is not running as a service: ontoplano-chat serve'
+	);
+	process.stdin.destroy();
+	return problems.length ? 1 : 0;
+}
+
+/** The systemd user unit, pointed at this checkout, enabled now. */
+async function installService(): Promise<boolean> {
+	const unit = readFileSync(join(ROOT, 'systemd', 'ontoplano-chat.service'), 'utf8').replace(
+		'%h/codes/ontoplano/ontoplano-chat',
+		ROOT.replace(/\/$/, '')
+	);
+	const dir = join(process.env.HOME ?? '', '.config', 'systemd', 'user');
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, 'ontoplano-chat.service'), unit);
+	const ok =
+		(await shell('systemctl --user daemon-reload')) && (await shell('systemctl --user enable --now ontoplano-chat'));
+	out(
+		ok
+			? '✓ running as a service — journalctl --user -u ontoplano-chat -f follows it'
+			: '✗ systemd did not take it; `make install-service` says more'
+	);
+	return ok;
+}
+
 export async function main(argv: string[]): Promise<number> {
 	const [verb, ...rest] = argv;
 	switch (verb) {
+		case 'setup':
+			return setup();
 		case 'serve':
 			return serve();
 		case 'pair':

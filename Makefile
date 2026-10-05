@@ -16,7 +16,7 @@ include defaults.env
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
 	@echo
-	@echo "  make setup             install, build, write ~/.config/ontoplano-chat/config.toml, check"
+	@echo "  make setup             install, build, then the six questions (the model, the ears, the voice, the phone)"
 	@echo "  make serve             run it here (Ctrl-C stops it)"
 	@echo "  make demo              run it with fake engines — nothing installed, the screen can be looked at"
 	@echo "  make pair              print a pairing code for a phone"
@@ -28,7 +28,9 @@ help:
 	@echo
 	@echo "  Switches: DEMO_PORT=$(DEMO_PORT)"
 
-setup: build config doctor
+## install, build, and ask the six questions
+setup: build
+	@node bin/ontoplano-chat.mjs setup
 
 build:
 	@[ -d node_modules ] || yarn install --frozen-lockfile

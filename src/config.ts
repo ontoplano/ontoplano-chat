@@ -48,12 +48,13 @@ export type Config = {
 		timeoutMs: number;
 		toolDescriptionChars: number;
 	};
-	stt: { kind: SttKind; url: string; path: string; model: string; language: string };
+	stt: { kind: SttKind; url: string; path: string; model: string; language: string; apiKey: string };
 	tts: {
 		kind: TtsKind;
 		url: string;
 		model: string;
 		voice: string;
+		apiKey: string;
 		piperCommand: string;
 		piperModel: string;
 	};
@@ -110,13 +111,15 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 			url: 'http://127.0.0.1:8000',
 			path: '/v1/audio/transcriptions',
 			model: 'Systran/faster-whisper-small',
-			language: 'pt'
+			language: 'pt',
+			apiKey: ''
 		},
 		tts: {
 			kind: 'browser',
 			url: 'http://127.0.0.1:8000',
 			model: 'speaches-ai/piper-pt_BR-faber-medium',
 			voice: 'pt_BR-faber-medium',
+			apiKey: '',
 			piperCommand: 'piper',
 			piperModel: '~/.local/share/piper/pt_BR-faber-medium.onnx'
 		},
@@ -190,13 +193,15 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 			url: str(stt, 'url', d.stt.url).replace(/\/+$/, ''),
 			path: str(stt, 'path', sttKind === 'whispercpp' ? '/inference' : d.stt.path),
 			model: str(stt, 'model', d.stt.model),
-			language: str(stt, 'language', d.stt.language)
+			language: str(stt, 'language', d.stt.language),
+			apiKey: env.ONTOPLANO_CHAT_STT_KEY ?? str(stt, 'api_key', '')
 		},
 		tts: {
 			kind: ttsKind as TtsKind,
 			url: str(tts, 'url', d.tts.url).replace(/\/+$/, ''),
 			model: str(tts, 'model', d.tts.model),
 			voice: str(tts, 'voice', d.tts.voice),
+			apiKey: env.ONTOPLANO_CHAT_TTS_KEY ?? str(tts, 'api_key', ''),
 			piperCommand: expandHome(str(tts, 'piper_command', d.tts.piperCommand)),
 			piperModel: expandHome(str(tts, 'piper_model', d.tts.piperModel))
 		},
@@ -296,7 +301,8 @@ timeout_ms = ${DEFAULT_LLM_TIMEOUT_MS}
 tool_description_chars = ${DEFAULT_TOOL_DESCRIPTION_CHARS}
 
 [stt]
-# "openai": an OpenAI-compatible /v1/audio/transcriptions (Speaches, LocalAI).
+# "openai": an OpenAI-compatible /v1/audio/transcriptions — Speaches or LocalAI
+#           on this machine, or a cloud one with an api_key.
 # "whispercpp": whisper.cpp's own server (/inference).
 # "browser": the phone's own recogniser — zero setup, but on Android it goes
 # through Google, which is the one thing this project exists to avoid.
@@ -304,6 +310,8 @@ kind = "openai"
 url = "http://127.0.0.1:8000"
 model = "Systran/faster-whisper-small"
 language = "pt"
+# Only a cloud transcriber wants one.
+api_key = ""
 
 [tts]
 # "browser": the phone's own voices — zero setup, on-device on Android.
@@ -313,6 +321,7 @@ kind = "browser"
 url = "http://127.0.0.1:8000"
 model = "speaches-ai/piper-pt_BR-faber-medium"
 voice = "pt_BR-faber-medium"
+api_key = ""
 piper_command = "piper"
 piper_model = "~/.local/share/piper/pt_BR-faber-medium.onnx"
 

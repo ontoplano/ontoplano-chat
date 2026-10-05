@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.0' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.1' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;
@@ -134,3 +134,119 @@ export const NO_WORDS: Record<string, string[]> = {
 	en: ['no', 'nope', 'cancel', 'stop', "don't", 'do not', 'never mind'],
 	pt: ['não', 'nao', 'cancela', 'para', 'deixa', 'esquece']
 };
+
+/** A place a model can run: a local server, or a company's API behind an OpenAI-compatible endpoint. */
+export type Provider = {
+	key: string;
+	name: string;
+	url: string;
+	model: string;
+	/** Runs on this machine: what is said never leaves it. */
+	local: boolean;
+	needsKey: boolean;
+	note: string;
+};
+
+/** The providers the setup wizard offers, local ones first. All speak OpenAI-style chat completions with tools. */
+export const PROVIDERS: Provider[] = [
+	{
+		key: 'ollama',
+		name: 'Ollama, on this computer',
+		url: 'http://127.0.0.1:11434/v1',
+		model: 'qwen2.5:7b',
+		local: true,
+		needsKey: false,
+		note: 'Everything stays here. The 7b model wants about 5 GB of memory; qwen2.5:3b is lighter, qwen2.5:14b better.'
+	},
+	{
+		key: 'local',
+		name: 'Another server on this computer (llama.cpp, LM Studio, vLLM)',
+		url: 'http://127.0.0.1:8080/v1',
+		model: '',
+		local: true,
+		needsKey: false,
+		note: 'Any OpenAI-compatible endpoint that does tool calling.'
+	},
+	{
+		key: 'openai',
+		name: 'OpenAI',
+		url: 'https://api.openai.com/v1',
+		model: 'gpt-4.1-mini',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{
+		key: 'anthropic',
+		name: 'Anthropic (Claude)',
+		url: 'https://api.anthropic.com/v1',
+		model: 'claude-sonnet-5',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{
+		key: 'groq',
+		name: 'Groq',
+		url: 'https://api.groq.com/openai/v1',
+		model: 'llama-3.3-70b-versatile',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{
+		key: 'mistral',
+		name: 'Mistral',
+		url: 'https://api.mistral.ai/v1',
+		model: 'mistral-small-latest',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{
+		key: 'openrouter',
+		name: 'OpenRouter',
+		url: 'https://openrouter.ai/api/v1',
+		model: 'openai/gpt-4.1-mini',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{
+		key: 'gemini',
+		name: 'Google Gemini',
+		url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+		model: 'gemini-2.5-flash',
+		local: false,
+		needsKey: true,
+		note: ''
+	},
+	{ key: 'custom', name: 'A URL of my own', url: '', model: '', local: false, needsKey: false, note: '' }
+];
+
+/** Where the ears can be. */
+export const EARS = [
+	{ key: 'speaches', name: 'Speaches, on this computer (faster-whisper; a Docker container)', local: true },
+	{ key: 'whispercpp', name: "whisper.cpp's server, already running here", local: true },
+	{ key: 'cloud', name: 'A cloud transcriber (OpenAI whisper-1, or any OpenAI-compatible one)', local: false },
+	{ key: 'browser', name: "The phone's own recogniser (zero setup; on Android it goes through Google)", local: false }
+] as const;
+
+/** Where the voice can be. */
+export const VOICES = [
+	{ key: 'browser', name: "The phone's own voice (zero setup; on-device on Android)", local: true },
+	{ key: 'piper', name: 'piper, on this computer', local: true },
+	{ key: 'speaches', name: 'Speaches on this computer (Kokoro or piper voices over HTTP)', local: true },
+	{ key: 'cloud', name: 'A cloud voice (OpenAI, or any OpenAI-compatible one)', local: false }
+] as const;
+
+/** How to install Ollama, and the Speaches container, when the wizard is asked to. */
+export const OLLAMA_INSTALL = 'curl -fsSL https://ollama.com/install.sh | sh';
+export const SPEACHES_RUN =
+	'docker run -d --name speaches --restart unless-stopped -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu';
+export const SPEACHES_URL = 'http://127.0.0.1:8000';
+export const OPENAI_STT_MODEL = 'whisper-1';
+export const OPENAI_TTS_MODEL = 'tts-1';
+export const OPENAI_TTS_VOICE = 'alloy';
+export const SPEACHES_TTS_MODEL = 'speaches-ai/Kokoro-82M-v1.0-ONNX';
+export const SPEACHES_TTS_VOICE = 'af_heart';

@@ -32,6 +32,7 @@ type SttOptions = {
 	path: string;
 	model: string;
 	language: string;
+	apiKey?: string;
 	fetchImpl?: typeof fetch;
 };
 
@@ -46,6 +47,7 @@ const extensionOf = (mime: string): string => {
 
 export function httpStt(o: SttOptions): Stt {
 	const fetchImpl = o.fetchImpl ?? fetch;
+	const headers: Record<string, string> = o.apiKey ? { Authorization: `Bearer ${o.apiKey}` } : {};
 	return {
 		kind: o.kind,
 		async transcribe(audio, mime, language = o.language) {
@@ -58,6 +60,7 @@ export function httpStt(o: SttOptions): Stt {
 			try {
 				res = await fetchImpl(`${o.url}${o.path}`, {
 					method: 'POST',
+					headers,
 					body: form,
 					signal: AbortSignal.timeout(SPEECH_TIMEOUT_MS)
 				});
@@ -70,7 +73,7 @@ export function httpStt(o: SttOptions): Stt {
 		},
 		async check() {
 			try {
-				const res = await fetchImpl(o.url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+				const res = await fetchImpl(o.url, { method: 'GET', headers, signal: AbortSignal.timeout(5000) });
 				return res.status >= 500 ? `${o.url} answered ${res.status}` : null;
 			} catch (e) {
 				return `no transcriber at ${o.url}: ${(e as Error).message}`;
@@ -93,10 +96,12 @@ export const browserTts: Tts = {
 	check: async () => null
 };
 
-type OpenAiTtsOptions = { url: string; model: string; voice: string; fetchImpl?: typeof fetch };
+type OpenAiTtsOptions = { url: string; model: string; voice: string; apiKey?: string; fetchImpl?: typeof fetch };
 
 export function openAiTts(o: OpenAiTtsOptions): Tts {
 	const fetchImpl = o.fetchImpl ?? fetch;
+	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+	if (o.apiKey) headers.Authorization = `Bearer ${o.apiKey}`;
 	return {
 		kind: 'openai',
 		async speak(text) {
@@ -104,7 +109,7 @@ export function openAiTts(o: OpenAiTtsOptions): Tts {
 			try {
 				res = await fetchImpl(`${o.url}/v1/audio/speech`, {
 					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
+					headers,
 					signal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
 					body: JSON.stringify({ model: o.model, voice: o.voice, input: text, response_format: 'mp3' })
 				});
