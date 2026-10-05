@@ -38,8 +38,12 @@ on your PATH, and asks six questions:
    tailnet name and runs `tailscale serve` for you), a TLS proxy you run,
    its own certificate, or only this computer for now.
 
-Then it writes `~/.config/ontoplano-chat/config.toml`, offers to run as a
-service, and prints a pairing code. Open the address on the device — a phone,
+Then it writes `~/.config/ontoplano-chat/config.toml`, **brings the stack up**
+— installs and starts Ollama and pulls the model, starts the Speaches
+container(s) the config names and downloads their models — offers to run as
+a service, and prints a pairing code. `ontoplano-chat stack` does that part
+again any time (after a reboot, after editing the config); it finds what is
+already there and leaves it. Open the address on the device — a phone,
 or a browser on this computer — type the code, and on a phone add it to the
 home screen. `ontoplano-chat setup` again keeps what it knows, and
 `ontoplano-chat setup ears` (or `app`, `model`, `voice`, `assistant`,
@@ -128,6 +132,7 @@ ontoplano-chat serve      run the server
 ontoplano-chat pair       print a pairing code (ten minutes, one use)
 ontoplano-chat devices    the paired phones
 ontoplano-chat revoke <name>
+ontoplano-chat stack      bring up what the config names: Ollama and its model, the Speaches container(s), their models
 ontoplano-chat doctor     check the model, the ears, the voice and the app
 ontoplano-chat config     print-and-write a commented example of every key
 ```

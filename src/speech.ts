@@ -115,6 +115,8 @@ type SttOptions = {
 	model: string;
 	language: string;
 	apiKey?: string;
+	/** Words the recogniser should expect — the app's name, the assistant's — so "ontoplano" is not heard as "on top land". */
+	prompt?: string;
 	fetchImpl?: typeof fetch;
 };
 
@@ -141,6 +143,7 @@ export function httpStt(o: SttOptions): Stt {
 			form.append('file', new Blob([audio], { type: mime }), `turn.${extensionOf(mime)}`);
 			form.append('response_format', 'json');
 			if (language) form.append('language', language);
+			if (o.prompt) form.append('prompt', o.prompt);
 			if (o.kind === 'openai') form.append('model', o.model);
 			let res: Response;
 			try {

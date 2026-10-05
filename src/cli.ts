@@ -18,6 +18,7 @@ import { terminalAsk } from './ask.js';
 import { OntoplanoMcp } from './mcp.js';
 import { openAiLlm } from './llm.js';
 import { speechServerCheck, speechServerPull } from './speech.js';
+import { ensureSpeaches, ensureStack, type Shell } from './stack.js';
 import { renderConfig, runWizard, STEPS, type Checks, type Choices, type Step } from './wizard.js';
 
 import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } from './config.js';
@@ -42,6 +43,7 @@ const HELP = `ontoplano-chat ${VERSION} — a local voice assistant for ontoplan
   ontoplano-chat devices    the paired devices
   ontoplano-chat revoke <name>
   ontoplano-chat doctor     check the model, the ears, the voice and the app
+  ontoplano-chat stack      bring up what the config names: Ollama and its model, the Speaches container(s), their models
   ontoplano-chat models     pull the model, and the speech models, the config names onto the local servers
   ontoplano-chat config     write ~/.config/ontoplano-chat/config.toml if there is none
   ontoplano-chat version
@@ -247,6 +249,13 @@ async function doctor(): Promise<number> {
 					: 'the token grants none of the tools in assistant.tools'
 				: engines.tools.lastError
 		);
+		// The everyday tools the token does not grant: each is a thing the assistant will say it cannot do.
+		const granted = new Set(engines.tools.granted().map((t) => t.name));
+		const missing = c.assistant.tools.filter((name) => !name.includes('*') && !granted.has(name));
+		if (loaded && missing.length) {
+			out(`  · not granted by the token, so the assistant cannot: ${missing.join(', ')}`);
+			out('      a token with more scopes: the app, Settings → AI & Integrations — then `ontoplano-chat setup app`');
+		}
 	}
 	const paired = new Devices(c.dataDir).list().length;
 	out(`  ${paired ? '✓' : '·'} ${paired} device${paired === 1 ? '' : 's'} paired`);
@@ -316,6 +325,33 @@ function shell(line: string): Promise<boolean> {
 		child.on('error', () => resolve(false));
 		child.on('close', (code) => resolve(code === 0));
 	});
+}
+
+/** A line run for its output. */
+function capture(line: string): Promise<string | null> {
+	return new Promise((resolve) => {
+		const child = spawn('sh', ['-c', line], { stdio: ['ignore', 'pipe', 'inherit'] });
+		let text = '';
+		child.stdout.on('data', (c: Buffer) => (text += c.toString()));
+		child.on('error', () => resolve(null));
+		child.on('close', (code) => resolve(code === 0 ? text : null));
+	});
+}
+
+const sh: Shell = {
+	run: shell,
+	capture,
+	has: (command) => has(command),
+	say: out,
+	sleep: (ms) => new Promise((r) => setTimeout(r, ms))
+};
+
+/** Everything the config names, brought up: the runner, the speech server(s), the models. */
+async function stack(): Promise<number> {
+	const c = config();
+	const ok = await ensureStack(c, sh);
+	out(ok ? '\nAll up.' : '\nSomething is still down; `ontoplano-chat doctor` says what.');
+	return ok ? 0 : 1;
 }
 
 function has(command: string): boolean {
@@ -396,6 +432,7 @@ async function setup(step?: string): Promise<number> {
 		llmModels: (url, apiKey) => openAiLlm({ url, model: '', apiKey, timeoutMs: 10_000 }).models(),
 		speech: (url, model, apiKey) => speechServerCheck(url, model, apiKey || undefined),
 		pull: (url, model, apiKey) => speechServerPull(url, model, apiKey || undefined),
+		startSpeaches: (url, name) => ensureSpeaches(url, name, sh),
 		has,
 		run: shell,
 		tailscaleName,
@@ -410,6 +447,9 @@ async function setup(step?: string): Promise<number> {
 	const fresh = config();
 	const problems = checkForServing(fresh);
 	for (const p of problems) out(`  ✗ ${p}`);
+	// The stack the config names, up before anything is asked of it.
+	await ensureStack(fresh, sh);
+	out('');
 	const devices = new Devices(fresh.dataDir);
 	// The code first, so a service started next finds one waiting and prints no second one.
 	const code = devices.list().length ? null : devices.issueCode();
@@ -482,6 +522,8 @@ export async function main(argv: string[]): Promise<number> {
 			return doctor();
 		case 'models':
 			return pullModels();
+		case 'stack':
+			return stack();
 		case 'config':
 			return writeConfig();
 		case 'version':

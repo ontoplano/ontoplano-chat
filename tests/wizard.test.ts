@@ -21,6 +21,7 @@ function checks(over: Partial<Checks> = {}): Checks & { ran: string[] } {
 		tailscaleName: async () => null,
 		llmPull: async () => null,
 		llmModels: async () => [],
+		startSpeaches: async () => true,
 		speech: async () => null,
 		pull: async () => null,
 		current: {},
@@ -245,24 +246,24 @@ describe('a Speaches that is not there', () => {
 			current,
 			speech: async (url) => (url.endsWith('7749') ? null : `nothing answers at ${url}: fetch failed`)
 		});
-		const choices = await runWizard(scriptedAsk(['3', '', '', '', '1']), c, 'voice');
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', 'y']), c, 'voice');
 		expect(choices.tts.url).toBe('http://127.0.0.1:7749');
 		expect(choices.stt.url).toBe('http://127.0.0.1:7749');
 	});
 
-	it('offers to start a container on that very port when docker is here', async () => {
-		let up = false;
+	it('starts a container on that very port itself when docker is here', async () => {
+		let started = '';
 		const c = checks({
 			current,
 			has: (cmd) => cmd === 'docker',
-			speech: async (url) => (url.endsWith('7749') || up ? null : `nothing answers at ${url}: fetch failed`),
-			run: async (line) => {
-				up = line.includes('-p 7748:8000');
-				return up;
+			speech: async (url) => (url.endsWith('7749') || started ? null : `nothing answers at ${url}: fetch failed`),
+			startSpeaches: async (url, name) => {
+				started = `${name}@${url}`;
+				return true;
 			}
 		});
-		const choices = await runWizard(scriptedAsk(['3', '', '', '', '2']), c, 'voice');
-		expect(up).toBe(true);
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', 'n']), c, 'voice');
+		expect(started).toBe('speaches-voice@http://127.0.0.1:7748');
 		expect(choices.tts.url).toBe('http://127.0.0.1:7748');
 	});
 });

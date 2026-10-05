@@ -113,7 +113,8 @@ export function buildEngines(
 					path: c.stt.path,
 					model: c.stt.model,
 					language: c.stt.language,
-					apiKey: c.stt.apiKey
+					apiKey: c.stt.apiKey,
+					prompt: c.stt.prompt || `${c.assistant.name}. ontoplano.`
 				});
 	const tts: Tts =
 		c.tts.kind === 'browser'

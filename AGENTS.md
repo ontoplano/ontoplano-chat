@@ -83,6 +83,11 @@ e2e/               Playwright — the page, at phone and desktop width
   Speaches answers 404 on the first turn when the model is not downloaded;
   `speechServerCheck` asks `/v1/models` first, and setup, doctor and
   `ontoplano-chat models` offer the download.
+- **The installer owns the stack.** Ollama and its model, the Speaches
+  container(s) and their models are brought up by `ontoplano-chat stack`
+  (`src/stack.ts`), which `setup` and `make install-service` run. Nothing —
+  not doctor, not the wizard, not a reply — hands the person a `docker run`
+  or an `ollama pull` to type; a thing that is missing and can be had is had.
 - **The data directory is private**: files are written `0600` through
   `writePrivate()`, the directory `0700`. Keep it so.
 

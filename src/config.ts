@@ -48,7 +48,7 @@ export type Config = {
 		timeoutMs: number;
 		toolDescriptionChars: number;
 	};
-	stt: { kind: SttKind; url: string; path: string; model: string; language: string; apiKey: string };
+	stt: { kind: SttKind; url: string; path: string; model: string; language: string; apiKey: string; prompt: string };
 	tts: {
 		kind: TtsKind;
 		url: string;
@@ -134,7 +134,8 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 			path: '/v1/audio/transcriptions',
 			model: 'Systran/faster-whisper-small',
 			language: 'pt',
-			apiKey: ''
+			apiKey: '',
+			prompt: ''
 		},
 		tts: {
 			kind: 'browser',
@@ -216,7 +217,8 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 			path: str(stt, 'path', sttKind === 'whispercpp' ? '/inference' : d.stt.path),
 			model: str(stt, 'model', d.stt.model),
 			language: str(stt, 'language', d.stt.language),
-			apiKey: env.ONTOPLANO_CHAT_STT_KEY ?? str(stt, 'api_key', '')
+			apiKey: env.ONTOPLANO_CHAT_STT_KEY ?? str(stt, 'api_key', ''),
+			prompt: str(stt, 'prompt', '')
 		},
 		tts: {
 			kind: ttsKind as TtsKind,
@@ -344,6 +346,8 @@ model = "Systran/faster-whisper-small"
 language = "pt"
 # Only a cloud transcriber wants one.
 api_key = ""
+# Words the recogniser should expect. Empty means the app's and the assistant's names.
+prompt = ""
 
 [tts]
 # "browser": the phone's own voices — zero setup, on-device on Android.

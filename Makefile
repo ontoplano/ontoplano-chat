@@ -11,7 +11,7 @@
 include defaults.env
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build link dev serve demo pair devices doctor config test test-unit test-e2e lint format icons install-service uninstall-service logs
+.PHONY: help setup stack build link dev serve demo pair devices doctor config test test-unit test-e2e lint format icons install-service uninstall-service logs
 
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
@@ -21,6 +21,7 @@ help:
 	@echo "  make demo              run it with fake engines — nothing installed, the screen can be looked at"
 	@echo "  make pair              print a pairing code for a phone"
 	@echo "  make devices           the paired phones"
+	@echo "  make stack             bring up Ollama and its model, the Speaches container(s) and their models"
 	@echo "  make doctor            check the model, the ears, the voice and the app"
 	@echo "  make install-service   run it as a user service from now on (make logs follows it)"
 	@echo "  make test              unit tests, then the browser suite"
@@ -30,9 +31,13 @@ help:
 	@echo
 	@echo "  Switches: DEMO_PORT=$(DEMO_PORT) BIN_DIR=$(BIN_DIR)"
 
-## install, build, and ask the six questions
+## install, build, and ask the six questions — then bring the stack up
 setup: build
 	@node bin/ontoplano-chat.mjs setup
+
+## bring up what the config names: Ollama and its model, the Speaches container(s), their models
+stack: build
+	@node bin/ontoplano-chat.mjs stack
 
 build: link
 	@[ -d node_modules ] || yarn install --frozen-lockfile
@@ -88,6 +93,7 @@ icons:
 
 ## run as a systemd user service, enabled now and on every login
 install-service: build
+	@node bin/ontoplano-chat.mjs stack
 	@mkdir -p $(HOME)/.config/systemd/user
 	@sed 's|%h/codes/ontoplano/ontoplano-chat|$(CURDIR)|' systemd/ontoplano-chat.service > $(HOME)/.config/systemd/user/ontoplano-chat.service
 	@systemctl --user daemon-reload

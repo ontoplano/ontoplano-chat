@@ -24,9 +24,6 @@ import {
 	OPENAI_TTS_MODEL,
 	OPENAI_TTS_VOICE,
 	PROVIDERS,
-	SPEACHES_START_POLL_MS,
-	SPEACHES_START_WAIT_MS,
-	speachesRun,
 	SPEACHES_TTS_MODEL,
 	SPEACHES_TTS_VOICE,
 	SPEACHES_URL,
@@ -81,6 +78,8 @@ export type Checks = {
 	speech(url: string, model: string, apiKey: string): Promise<string | null>;
 	/** Ask a speech server to download a model: null when it did. */
 	pull(url: string, model: string, apiKey: string): Promise<string | null>;
+	/** Bring a Speaches up on that address (a container started or created); true when it answers. */
+	startSpeaches(url: string, name: string): Promise<boolean>;
 	/** What the config says now, for defaults — and for the steps not asked. */
 	current: Partial<Choices>;
 };
@@ -145,8 +144,6 @@ const portOf = (url: string): string => {
 	}
 };
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
-
 /**
  * A speech server checked, and the ways out offered when it is not there:
  * the other half's Speaches, when it answers; a container started on this
@@ -166,29 +163,19 @@ async function speechReady(
 	if (problem && /nothing answers/.test(problem) && !apiKey) {
 		ask.say(`   ✗ ${problem}`);
 		const otherUp = o.other && o.other !== url ? (await checks.speech(o.other, '', '')) === null : false;
-		const options = [
-			...(otherUp
-				? [{ key: 'other', label: `use the Speaches already answering at ${o.other} — one server does both` }]
-				: []),
-			...(checks.has('docker')
-				? [{ key: 'start', label: `start a Speaches container on this port now: ${speachesRun(portOf(url), o.name)}` }]
-				: []),
-			{ key: 'leave', label: 'leave it; `ontoplano-chat doctor` checks again later' }
-		];
-		const pick =
-			options.length > 1 ? await ask.choose('   Nothing is there yet. What now?', options, options[0]!.key) : 'leave';
-		if (pick === 'other') {
+		if (
+			otherUp &&
+			(await ask.yes(`   Use the Speaches already answering at ${o.other}? One server does both.`, true))
+		) {
 			url = o.other as string;
 			problem = await checks.speech(url, model, apiKey);
-		} else if (pick === 'start') {
-			if (await checks.run(speachesRun(portOf(url), o.name))) {
-				ask.say('   started; waiting for it to answer…');
-				const until = Date.now() + SPEACHES_START_WAIT_MS;
-				do {
-					await sleep(SPEACHES_START_POLL_MS);
-					problem = await checks.speech(url, model, apiKey);
-				} while (problem && /nothing answers/.test(problem) && Date.now() < until);
-			}
+		} else if (checks.has('docker')) {
+			ask.say(`   starting a Speaches on ${portOf(url)}…`);
+			problem = (await checks.startSpeaches(url, o.name)) ? await checks.speech(url, model, apiKey) : problem;
+		} else {
+			ask.say(
+				'   docker is not here to start one: https://docs.docker.com/engine/install/ — then `ontoplano-chat stack`'
+			);
 		}
 	}
 	if (problem && /not installed/.test(problem)) {
