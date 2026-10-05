@@ -20,7 +20,7 @@ import { openAiLlm } from './llm.js';
 import { renderConfig, runWizard, STEPS, type Checks, type Choices, type Step } from './wizard.js';
 
 import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } from './config.js';
-import { PROVIDERS } from './constants.js';
+import { OLLAMA_INSTALL, PROVIDERS, SPEACHES_RUN } from './constants.js';
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
 import { Devices } from './pairing.js';
@@ -186,20 +186,50 @@ async function doctor(): Promise<number> {
 	);
 	out(`data     ${c.dataDir}`);
 	let bad = 0;
-	const tell = (what: string, problem: string | null): void => {
+	/** A line per check, and under a ✗ the thing to do about it. */
+	const tell = (what: string, problem: string | null, fix?: string): void => {
 		out(`${problem ? '  ✗' : '  ✓'} ${what}${problem ? ` — ${problem}` : ''}`);
-		if (problem) bad++;
+		if (problem) {
+			bad++;
+			if (fix) out(`      ${fix}`);
+		}
 	};
 	for (const p of checkForServing(c)) tell('serving', p);
 	const engines = buildEngines(c);
-	tell(`model ${engines.llm.model} at ${c.llm.url}`, await engines.llm.check());
+	const port = (url: string): string => {
+		try {
+			return new URL(url).port || '8000';
+		} catch {
+			return '8000';
+		}
+	};
+	const llmProblem = await engines.llm.check();
+	tell(
+		`model ${engines.llm.model} at ${c.llm.url}`,
+		llmProblem,
+		c.llm.url.includes('11434')
+			? llmProblem && /not among/.test(llmProblem)
+				? `ollama pull ${engines.llm.model}`
+				: has('ollama')
+					? `is Ollama running? systemctl status ollama — or: ollama serve`
+					: `install it: ${OLLAMA_INSTALL} — then: ollama pull ${engines.llm.model}`
+			: 'is the server up at that address? `ontoplano-chat setup model` changes it'
+	);
 	tell(
 		`ears ${engines.stt.kind}${engines.stt.kind === 'browser' ? ' (the device recognises speech itself)' : ` at ${c.stt.url}`}`,
-		await engines.stt.check()
+		await engines.stt.check(),
+		engines.stt.kind === 'openai' && !c.stt.apiKey
+			? `nothing answers there. Speaches: ${SPEACHES_RUN.replace('-p 8000:8000', `-p ${port(c.stt.url)}:8000`)} — or \`ontoplano-chat setup ears\` with the port it really has`
+			: engines.stt.kind === 'whispercpp'
+				? "is whisper.cpp's server running on that port? `ontoplano-chat setup ears` changes it"
+				: 'check the address and the key: `ontoplano-chat setup ears`'
 	);
 	tell(
 		`voice ${engines.tts.kind}${engines.tts.kind === 'browser' ? ' (the device speaks itself)' : ''}`,
-		await engines.tts.check()
+		await engines.tts.check(),
+		engines.tts.kind === 'piper'
+			? 'piper is not on the PATH: https://github.com/rhasspy/piper — or `ontoplano-chat setup voice`'
+			: 'nothing answers there: `ontoplano-chat setup voice` changes it'
 	);
 	if (c.ontoplano.token) {
 		const loaded = await engines.tools.load();
