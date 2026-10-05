@@ -104,6 +104,21 @@ here is what each means:
 - **Its own certificate**: `[server.tls]` with a cert and key the phone
   trusts (`mkcert` on a LAN, or Let's Encrypt), and `host = "0.0.0.0"`.
 
+## What runs where, and its logs
+
+| thing              | what it is                                                           | where it lives                                                                                                                                   | logs                                                                                                                       |
+| ------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| **ontoplano-chat** | this server: the page, the pairing, the turn loop                    | code in the checkout; `~/.config/ontoplano-chat/config.toml`; `~/.local/share/ontoplano-chat/` (devices, pairing code, `turns.jsonl`); port 1497 | `journalctl --user -u ontoplano-chat -f` (`make logs`); every turn in `turns.jsonl` and on the phone under _What was done_ |
+| **the page**       | what the device opens                                                | served by the server from `web/`                                                                                                                 | the browser's console; the settings sheet says what each engine is and what is wrong with it                               |
+| **the model**      | Ollama, or the provider chosen                                       | Ollama: `ollama.service` (system), models under `/usr/share/ollama/.ollama/models` (or `~/.ollama` when run by hand), port 11434                 | `journalctl -u ollama -f`; `ollama list`, `ollama ps`                                                                      |
+| **the ears**       | Speaches (faster-whisper), or whisper.cpp, or a cloud, or the device | a Docker container: `docker ps`; its models in the container's Hugging Face cache; API docs at `http://127.0.0.1:<port>/docs`                    | `docker logs -f <container>`                                                                                               |
+| **the voice**      | the device's own, piper, Speaches (Kokoro), or a cloud               | same as the ears when it is Speaches: `docker ps -a` (a stopped one shows there)                                                                 | `docker logs -f <container>`; piper writes to the server's log                                                             |
+| **the app**        | your ontoplano, reached over MCP with the token                      | wherever it is served — not this computer                                                                                                        | its own box's journal                                                                                                      |
+
+`ontoplano-chat doctor` asks each of them the question a turn asks — a one-word
+completion, a moment of silence transcribed, a word spoken, the tool list — and
+says what to do under anything that fails.
+
 ## The command
 
 ```
