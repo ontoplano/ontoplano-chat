@@ -15,6 +15,7 @@
  * thing runs in a test with scripted answers and fake checks.
  */
 import type { Ask } from './ask.js';
+import { normalizeUrl } from './config.js';
 import {
 	DEFAULT_PORT,
 	EARS,
@@ -185,7 +186,7 @@ export async function runWizard(ask: Ask, checks: Checks, only?: Step): Promise<
 async function stepApp(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
 	const cur = checks.current;
 	ask.say(`${n}The app`);
-	c.appUrl = (await ask.text('Where is your ontoplano?', c.appUrl)).replace(/\/+$/, '');
+	c.appUrl = normalizeUrl(await ask.text('Where is your ontoplano?', c.appUrl));
 	ask.say(
 		'   An API token from the app: Settings → AI & Integrations → new token, with the scopes the assistant may use.'
 	);
@@ -216,7 +217,7 @@ async function stepModel(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	);
 	const p = PROVIDERS.find((x) => x.key === c.provider) as Provider;
 	const same = cur.provider === c.provider;
-	c.llm.url = (await ask.text('   Endpoint', (same && cur.llm?.url) || p.url)).replace(/\/+$/, '');
+	c.llm.url = normalizeUrl(await ask.text('   Endpoint', (same && cur.llm?.url) || p.url));
 	c.llm.model = await ask.text('   Model', (same && cur.llm?.model) || p.model);
 	c.llm.apiKey = '';
 	if (p.needsKey || c.provider === 'custom') {
@@ -278,7 +279,7 @@ async function stepEars(ask: Ask, checks: Checks, c: Choices, n: string): Promis
 	};
 	if (ears === 'speaches') {
 		const remembered = was === 'speaches' && cur.stt?.url ? cur.stt.url : speachesSoFar(c, cur);
-		stt.url = (await ask.text('   Speaches URL', remembered)).replace(/\/+$/, '');
+		stt.url = normalizeUrl(await ask.text('   Speaches URL', remembered));
 		stt.model = await ask.text('   Whisper model', (was === 'speaches' && cur.stt?.model) || stt.model);
 		if (checks.has('docker') && (await ask.yes(`   Start the Speaches container now? (${SPEACHES_RUN})`, false)))
 			await checks.run(SPEACHES_RUN);
@@ -288,10 +289,9 @@ async function stepEars(ask: Ask, checks: Checks, c: Choices, n: string): Promis
 			await ask.text('   whisper.cpp server URL', (was === 'whispercpp' && cur.stt?.url) || 'http://127.0.0.1:8080')
 		).replace(/\/+$/, '');
 	} else if (ears === 'cloud') {
-		stt.url = (await ask.text('   Endpoint', (was === 'cloud' && cur.stt?.url) || 'https://api.openai.com')).replace(
-			/\/+$/,
-			''
-		);
+		stt.url = normalizeUrl(
+			await ask.text('   Endpoint', (was === 'cloud' && cur.stt?.url) || 'https://api.openai.com')
+		).replace(/\/+$/, '');
 		stt.model = await ask.text('   Model', (was === 'cloud' && cur.stt?.model) || OPENAI_STT_MODEL);
 		const kept = was === 'cloud' ? cur.stt?.apiKey || '' : '';
 		stt.apiKey = (await ask.secret(kept ? '   API key (enter keeps the current one):' : '   API key:')) || kept;
@@ -328,15 +328,14 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	} else if (voice === 'speaches') {
 		tts.kind = 'openai';
 		const remembered = was === 'speaches' && cur.tts?.url ? cur.tts.url : speachesSoFar(c, cur);
-		tts.url = (await ask.text('   Speaches URL', remembered)).replace(/\/+$/, '');
+		tts.url = await ask.text('   Speaches URL', remembered);
 		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
 		tts.voice = await ask.text('   Voice', (was === 'speaches' && cur.tts?.voice) || SPEACHES_TTS_VOICE);
 	} else if (voice === 'cloud') {
 		tts.kind = 'openai';
-		tts.url = (await ask.text('   Endpoint', (was === 'cloud' && cur.tts?.url) || 'https://api.openai.com')).replace(
-			/\/+$/,
-			''
-		);
+		tts.url = normalizeUrl(
+			await ask.text('   Endpoint', (was === 'cloud' && cur.tts?.url) || 'https://api.openai.com')
+		).replace(/\/+$/, '');
 		tts.model = await ask.text('   Model', (was === 'cloud' && cur.tts?.model) || OPENAI_TTS_MODEL);
 		tts.voice = await ask.text('   Voice', (was === 'cloud' && cur.tts?.voice) || OPENAI_TTS_VOICE);
 		const kept = was === 'cloud' ? cur.tts?.apiKey || '' : '';
@@ -399,7 +398,7 @@ async function stepReach(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	if (c.reach === 'tailscale') {
 		c.publicUrl = tailscale
 			? `https://${tailscale}`
-			: await ask.text('   The https name Tailscale gives this computer', cur.publicUrl || '');
+			: normalizeUrl(await ask.text('   The https name Tailscale gives this computer', cur.publicUrl || ''));
 		if (checks.has('tailscale') && (await ask.yes(`   Run \`tailscale serve --bg ${c.port}\` now?`, true)))
 			await checks.run(`tailscale serve --bg ${c.port}`);
 	} else if (c.reach === 'proxy') {
@@ -411,6 +410,6 @@ async function stepReach(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 		c.tls.cert = await ask.text('   Certificate file', cur.tls?.cert || '');
 		c.tls.key = await ask.text('   Key file', cur.tls?.key || '');
 		c.host = '0.0.0.0';
-		c.publicUrl = (await ask.text('   The https address the device opens', cur.publicUrl || '')).replace(/\/+$/, '');
+		c.publicUrl = await ask.text('   The https address the device opens', cur.publicUrl || '');
 	}
 }

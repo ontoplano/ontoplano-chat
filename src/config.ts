@@ -81,6 +81,28 @@ export function dataDir(env: NodeJS.ProcessEnv = process.env): string {
 	return expandHome(env.ONTOPLANO_CHAT_DATA ?? join(homedir(), DATA_RELATIVE));
 }
 
+/**
+ * An address as somebody types it: `127.0.0.1:7749` means http://127.0.0.1:7749,
+ * and a trailing slash is noise. Every URL the config or the wizard takes
+ * goes through here, so a port typed bare is not a server that cannot be
+ * reached.
+ */
+export function normalizeUrl(raw: string): string {
+	const t = raw.trim().replace(/\/+$/, '');
+	if (!t) return '';
+	return /^[a-z][a-z0-9+.-]*:\/\//i.test(t) ? t : `http://${t}`;
+}
+
+/** Null when the address parses, else what is wrong with it. */
+export function urlProblem(url: string): string | null {
+	try {
+		new URL(url);
+		return null;
+	} catch {
+		return `"${url}" is not an address`;
+	}
+}
+
 export function expandHome(p: string): string {
 	if (p === '~') return homedir();
 	if (p.startsWith('~/')) return join(homedir(), p.slice(2));
@@ -171,16 +193,16 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 		server: {
 			host: str(server, 'host', d.server.host),
 			port: num(server, 'port', d.server.port),
-			publicUrl: str(server, 'public_url', d.server.publicUrl).replace(/\/+$/, ''),
+			publicUrl: normalizeUrl(str(server, 'public_url', d.server.publicUrl)),
 			insecure: bool(server, 'insecure', d.server.insecure),
 			tls: { cert: expandHome(str(tls, 'cert', '')), key: expandHome(str(tls, 'key', '')) }
 		},
 		ontoplano: {
-			url: str(onto, 'url', d.ontoplano.url).replace(/\/+$/, ''),
+			url: normalizeUrl(str(onto, 'url', d.ontoplano.url)),
 			token: env.ONTOPLANO_MCP_TOKEN ?? str(onto, 'token', '')
 		},
 		llm: {
-			url: str(llm, 'url', d.llm.url).replace(/\/+$/, ''),
+			url: normalizeUrl(str(llm, 'url', d.llm.url)),
 			model: str(llm, 'model', d.llm.model),
 			apiKey: env.ONTOPLANO_CHAT_LLM_KEY ?? str(llm, 'api_key', ''),
 			temperature: num(llm, 'temperature', d.llm.temperature),
@@ -190,7 +212,7 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 		},
 		stt: {
 			kind: sttKind as SttKind,
-			url: str(stt, 'url', d.stt.url).replace(/\/+$/, ''),
+			url: normalizeUrl(str(stt, 'url', d.stt.url)),
 			path: str(stt, 'path', sttKind === 'whispercpp' ? '/inference' : d.stt.path),
 			model: str(stt, 'model', d.stt.model),
 			language: str(stt, 'language', d.stt.language),
@@ -198,7 +220,7 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 		},
 		tts: {
 			kind: ttsKind as TtsKind,
-			url: str(tts, 'url', d.tts.url).replace(/\/+$/, ''),
+			url: normalizeUrl(str(tts, 'url', d.tts.url)),
 			model: str(tts, 'model', d.tts.model),
 			voice: str(tts, 'voice', d.tts.voice),
 			apiKey: env.ONTOPLANO_CHAT_TTS_KEY ?? str(tts, 'api_key', ''),
@@ -249,6 +271,16 @@ export function checkForServing(c: Config): string[] {
 			'ontoplano.token is empty: make an API token in the app (Settings → AI & Integrations) and put it here or in ONTOPLANO_MCP_TOKEN'
 		);
 	if (c.server.port < 1 || c.server.port > 65535) problems.push(`server.port ${c.server.port} is not a port`);
+	for (const [name, url] of [
+		['ontoplano.url', c.ontoplano.url],
+		['llm.url', c.llm.url],
+		['stt.url', c.stt.kind === 'browser' ? '' : c.stt.url],
+		['tts.url', c.tts.kind === 'openai' ? c.tts.url : ''],
+		['server.public_url', c.server.publicUrl]
+	] as const) {
+		const problem = url && urlProblem(url);
+		if (problem) problems.push(`${name}: ${problem}`);
+	}
 	if (!isAbsolute(c.dataDir)) problems.push(`data directory ${c.dataDir} is not an absolute path`);
 	return problems;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkForServing, exampleConfig, fromToml, ConfigError } from '../src/config.js';
+import { checkForServing, exampleConfig, fromToml, normalizeUrl, ConfigError } from '../src/config.js';
 import { DEFAULT_PORT, DEFAULT_TOOLS } from '../src/constants.js';
 
 const env = { HOME: '/home/x' } as NodeJS.ProcessEnv;
@@ -31,6 +31,20 @@ describe('config', () => {
 	it('the environment overrides the token', () => {
 		const c = fromToml(`[ontoplano]\ntoken = "file"`, { ...env, ONTOPLANO_MCP_TOKEN: 'env' });
 		expect(c.ontoplano.token).toBe('env');
+	});
+
+	it('an address typed without a scheme is http', () => {
+		expect(normalizeUrl('127.0.0.1:7749')).toBe('http://127.0.0.1:7749');
+		expect(normalizeUrl('https://x.example/')).toBe('https://x.example');
+		expect(normalizeUrl('  ')).toBe('');
+		const c = fromToml(`[stt]\nurl = "127.0.0.1:7749"\n[tts]\nkind = "openai"\nurl = "localhost:8888/"`, env);
+		expect(c.stt.url).toBe('http://127.0.0.1:7749');
+		expect(c.tts.url).toBe('http://localhost:8888');
+	});
+
+	it('an address that is not one is named before serving', () => {
+		const problems = checkForServing(fromToml(`[ontoplano]\ntoken = "t"\n[stt]\nurl = "http://not a host"`, env));
+		expect(problems.join(' ')).toMatch(/stt.url: "http:\/\/not a host" is not an address/);
 	});
 
 	it('whisper.cpp gets its own path by default', () => {
