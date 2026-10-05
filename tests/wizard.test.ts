@@ -126,6 +126,71 @@ describe('the wizard', () => {
 	});
 });
 
+describe('one step alone', () => {
+	const current = {
+		appUrl: 'https://my.onto',
+		token: 'kept',
+		provider: 'ollama',
+		llm: { url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', apiKey: '' },
+		stt: {
+			kind: 'openai' as const,
+			url: 'http://127.0.0.1:8000',
+			model: 'Systran/faster-whisper-small',
+			language: 'pt',
+			apiKey: ''
+		},
+		tts: {
+			kind: 'openai' as const,
+			url: 'http://127.0.0.1:8888',
+			model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+			voice: 'af_heart',
+			apiKey: '',
+			piperModel: ''
+		},
+		name: 'Ontoagent',
+		language: 'pt-BR',
+		reach: 'loopback' as const,
+		publicUrl: '',
+		host: '127.0.0.1',
+		port: 1497,
+		tls: { cert: '', key: '' }
+	};
+
+	it('asks only that step and keeps the rest', async () => {
+		const log: string[] = [];
+		const choices = await runWizard(scriptedAsk(['1', 'http://127.0.0.1:9000'], log), checks({ current }), 'ears');
+		expect(choices.stt.url).toBe('http://127.0.0.1:9000');
+		expect(choices.tts.url).toBe('http://127.0.0.1:8888');
+		expect(choices.name).toBe('Ontoagent');
+		expect(choices.token).toBe('kept');
+		expect(log.some((l) => l.includes('The model'))).toBe(false);
+	});
+
+	it('offers what the config says, and does not change it just by being asked', async () => {
+		const choices = await runWizard(scriptedAsk([]), checks({ current }), 'voice');
+		expect(choices.tts).toEqual(current.tts);
+		expect(current.tts.url).toBe('http://127.0.0.1:8888');
+	});
+
+	it('the voice step offers the Speaches URL the ears were given', async () => {
+		const choices = await runWizard(
+			scriptedAsk(['', 'tok', '', '', '', '1', 'http://127.0.0.1:9000', '', '3']),
+			checks()
+		);
+		expect(choices.stt.url).toBe('http://127.0.0.1:9000');
+		expect(choices.tts.url).toBe('http://127.0.0.1:9000');
+	});
+
+	it('without a config, one step is all six', async () => {
+		const log: string[] = [];
+		await runWizard(scriptedAsk(['', 'tok']), checks(), 'ears');
+		void log;
+		const choices = await runWizard(scriptedAsk(['', 'tok'], log), checks(), 'ears');
+		expect(choices.token).toBe('tok');
+		expect(log.some((l) => l.includes('The model'))).toBe(true);
+	});
+});
+
 describe('the providers', () => {
 	it('cloud ones are https and want a key; local ones are loopback', () => {
 		for (const p of PROVIDERS.filter((p) => p.key !== 'custom')) {

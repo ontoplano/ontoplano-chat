@@ -64,6 +64,16 @@ e2e/               Playwright — the page, at phone and desktop width
   `src/fakes.ts`; the unit tests and the e2e suite run against them. A new
   tool the fake app should understand is added there, with a sentence shape
   the fake model maps to it.
+- **Say "device", not "phone", wherever the thing pairing could be this
+  computer's own browser** — the command's words, the wizard's, the page's.
+  The first real run paired the computer and read "now pair the phone" after
+  "a phone cannot reach it yet", which contradicted itself.
+- **The wizard remembers.** Every step's defaults are what the config says
+  now, and `setup <step>` redoes one step over the rest. A question that
+  forgets an answer given a step earlier (the Speaches URL, say) is a bug.
+- **One pairing code at a time.** `serve` prints a code only when none is
+  pending; `setup` issues its code before starting the service. Two codes
+  printed in a row means the first is dead.
 - **The data directory is private**: files are written `0600` through
   `writePrivate()`, the directory `0700`. Keep it so.
 

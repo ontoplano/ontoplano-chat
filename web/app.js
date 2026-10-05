@@ -342,6 +342,8 @@ function handle(event, turn, meBubble) {
 			play(event.mime, event.base64);
 			break;
 		case 'error': {
+			// Nothing was heard: the waiting "…" has nothing to become.
+			if (meBubble && meBubble.textContent === '…') meBubble.parentElement.remove();
 			const bubble = turn.bubble.isConnected ? turn.bubble : document.createElement('div');
 			bubble.className = 'bubble error';
 			bubble.textContent = errorText(event.message);

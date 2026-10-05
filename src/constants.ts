@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.1' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.2' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;
@@ -229,12 +229,12 @@ export const EARS = [
 	{ key: 'speaches', name: 'Speaches, on this computer (faster-whisper; a Docker container)', local: true },
 	{ key: 'whispercpp', name: "whisper.cpp's server, already running here", local: true },
 	{ key: 'cloud', name: 'A cloud transcriber (OpenAI whisper-1, or any OpenAI-compatible one)', local: false },
-	{ key: 'browser', name: "The phone's own recogniser (zero setup; on Android it goes through Google)", local: false }
+	{ key: 'browser', name: "The device's own recogniser (zero setup; on Android it goes through Google)", local: false }
 ] as const;
 
 /** Where the voice can be. */
 export const VOICES = [
-	{ key: 'browser', name: "The phone's own voice (zero setup; on-device on Android)", local: true },
+	{ key: 'browser', name: "The device's own voice (zero setup; on-device on Android)", local: true },
 	{ key: 'piper', name: 'piper, on this computer', local: true },
 	{ key: 'speaches', name: 'Speaches on this computer (Kokoro or piper voices over HTTP)', local: true },
 	{ key: 'cloud', name: 'A cloud voice (OpenAI, or any OpenAI-compatible one)', local: false }

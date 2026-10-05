@@ -6,11 +6,13 @@
  *   2. the model — on this computer, or a company's API — checked
  *   3. the ears, 4. the voice
  *   5. the name and the language
- *   6. how the phone reaches this computer
+ *   6. how a device reaches this computer
  *
- * The answers are a plain object; `renderConfig` turns them into the TOML
- * file. The questions and the checks are separate from the terminal, so the
- * whole thing runs in a test with scripted answers and fake checks.
+ * Each is a step, and `setup <step>` runs one of them alone over what the
+ * config already says — changing a port is one question, not six. The
+ * answers are a plain object; `renderConfig` turns them into the TOML file.
+ * The questions and the checks are separate from the terminal, so the whole
+ * thing runs in a test with scripted answers and fake checks.
  */
 import type { Ask } from './ask.js';
 import {
@@ -52,6 +54,10 @@ export type Choices = {
 	tls: { cert: string; key: string };
 };
 
+/** The six questions, by name — what `setup <step>` takes. */
+export const STEPS = ['app', 'model', 'ears', 'voice', 'assistant', 'reach'] as const;
+export type Step = (typeof STEPS)[number];
+
 /** What the wizard asks the world. Every one is replaceable in a test. */
 export type Checks = {
 	/** How many tools the token grants, or a problem. */
@@ -64,7 +70,7 @@ export type Checks = {
 	run(line: string): Promise<boolean>;
 	/** This machine's tailnet https name, if Tailscale is up. */
 	tailscaleName(): Promise<string | null>;
-	/** What the config says now, for defaults. */
+	/** What the config says now, for defaults — and for the steps not asked. */
 	current: Partial<Choices>;
 };
 
@@ -73,7 +79,8 @@ const quote = (s: string): string => JSON.stringify(s);
 /** The config file these answers describe. */
 export function renderConfig(c: Choices): string {
 	return `# ontoplano-chat — written by \`ontoplano-chat setup\`. Edit freely; \`ontoplano-chat config\`
-# prints a commented example of every key.
+# prints a commented example of every key, and \`ontoplano-chat setup <step>\`
+# (${STEPS.join(', ')}) asks one question again.
 
 [server]
 host = ${quote(c.host)}
@@ -118,119 +125,197 @@ language = ${quote(c.language)}
 
 const sttLanguage = (tag: string): string => tag.toLowerCase().split(/[-_]/)[0] ?? 'en';
 
-export async function runWizard(ask: Ask, checks: Checks): Promise<Choices> {
+/** What the config says, with a default for anything it does not: the ground every step writes over. */
+function baseChoices(cur: Partial<Choices>): Choices {
+	return {
+		appUrl: cur.appUrl || 'https://app.ontoplano.com',
+		token: cur.token || '',
+		provider: cur.provider || 'ollama',
+		// Copies, not the config's own objects: a step writes over them while the
+		// config's answers are still the defaults of the questions after it.
+		llm: cur.llm ? { ...cur.llm } : { url: PROVIDERS[0]!.url, model: PROVIDERS[0]!.model, apiKey: '' },
+		stt: cur.stt
+			? { ...cur.stt }
+			: {
+					kind: 'openai',
+					url: SPEACHES_URL,
+					model: 'Systran/faster-whisper-small',
+					language: 'pt',
+					apiKey: ''
+				},
+		tts: cur.tts
+			? { ...cur.tts }
+			: { kind: 'browser', url: SPEACHES_URL, model: '', voice: '', apiKey: '', piperModel: '' },
+		name: cur.name || 'Onto',
+		language: cur.language || 'pt-BR',
+		reach: cur.reach ?? 'loopback',
+		publicUrl: cur.publicUrl || '',
+		host: cur.host || '127.0.0.1',
+		port: cur.port || DEFAULT_PORT,
+		tls: cur.tls ? { ...cur.tls } : { cert: '', key: '' }
+	};
+}
+
+export async function runWizard(ask: Ask, checks: Checks, only?: Step): Promise<Choices> {
 	const cur = checks.current;
+	const c = baseChoices(cur);
+	// One step alone needs a config to stand on; without one, it is all six.
+	const steps: readonly Step[] = only && Object.keys(cur).length ? [only] : STEPS;
+	const number = (step: Step): string => (steps.length === 1 ? '' : `${STEPS.indexOf(step) + 1}. `);
 	ask.say();
-	ask.say('ontoplano-chat setup — six questions, then a pairing code.');
+	ask.say(
+		steps.length === 1
+			? `ontoplano-chat setup — ${only}.`
+			: 'ontoplano-chat setup — six questions, then a pairing code.'
+	);
 	ask.say();
 
-	// 1. the app
-	ask.say('1. The app');
-	const appUrl = (await ask.text('Where is your ontoplano?', cur.appUrl || 'https://app.ontoplano.com')).replace(
-		/\/+$/,
-		''
-	);
+	for (const step of steps) {
+		if (step === 'app') await stepApp(ask, checks, c, number(step));
+		else if (step === 'model') await stepModel(ask, checks, c, number(step));
+		else if (step === 'ears') await stepEars(ask, checks, c, number(step));
+		else if (step === 'voice') await stepVoice(ask, checks, c, number(step));
+		else if (step === 'assistant') await stepAssistant(ask, c, number(step));
+		else await stepReach(ask, checks, c, number(step));
+		if (steps.length > 1) ask.say();
+	}
+	return c;
+}
+
+async function stepApp(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
+	const cur = checks.current;
+	ask.say(`${n}The app`);
+	c.appUrl = (await ask.text('Where is your ontoplano?', c.appUrl)).replace(/\/+$/, '');
 	ask.say(
 		'   An API token from the app: Settings → AI & Integrations → new token, with the scopes the assistant may use.'
 	);
-	let token: string;
 	for (;;) {
-		token = cur.token
-			? (await ask.secret('   Token (enter keeps the current one):')) || cur.token
-			: await ask.secret('   Token:');
-		if (!token) {
+		const typed = await ask.secret(cur.token ? '   Token (enter keeps the current one):' : '   Token:');
+		c.token = typed || cur.token || '';
+		if (!c.token) {
 			ask.say('   It needs one.');
 			continue;
 		}
-		const r = await checks.app(appUrl, token);
+		const r = await checks.app(c.appUrl, c.token);
 		if ('tools' in r) {
 			ask.say(`   ✓ the token grants ${r.tools} tools`);
-			break;
+			return;
 		}
 		ask.say(`   ✗ ${r.problem}`);
-		if (!(await ask.yes('   Try another?', true))) break;
+		if (!(await ask.yes('   Try another?', true))) return;
 	}
+}
 
-	// 2. the model
-	ask.say();
-	ask.say('2. The model');
-	const provider = await ask.choose(
+async function stepModel(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
+	const cur = checks.current;
+	ask.say(`${n}The model`);
+	c.provider = await ask.choose(
 		"   Where should it think? Local keeps everything on this computer; a company's API sends what you say to them.",
 		PROVIDERS.map((p) => ({ key: p.key, label: p.name + (p.local ? '' : '  — cloud'), note: p.note || undefined })),
-		cur.provider || 'ollama'
+		c.provider
 	);
-	const p = PROVIDERS.find((x) => x.key === provider) as Provider;
-	const llmUrl = (await ask.text('   Endpoint', cur.provider === provider ? cur.llm?.url || p.url : p.url)).replace(
-		/\/+$/,
-		''
-	);
-	const llmModel = await ask.text('   Model', cur.provider === provider ? cur.llm?.model || p.model : p.model);
-	let llmKey = '';
-	if (p.needsKey || provider === 'custom') {
-		llmKey = cur.llm?.apiKey
-			? (await ask.secret('   API key (enter keeps the current one):')) || cur.llm.apiKey
-			: await ask.secret(p.needsKey ? '   API key:' : '   API key (enter for none):');
+	const p = PROVIDERS.find((x) => x.key === c.provider) as Provider;
+	const same = cur.provider === c.provider;
+	c.llm.url = (await ask.text('   Endpoint', (same && cur.llm?.url) || p.url)).replace(/\/+$/, '');
+	c.llm.model = await ask.text('   Model', (same && cur.llm?.model) || p.model);
+	c.llm.apiKey = '';
+	if (p.needsKey || c.provider === 'custom') {
+		const kept = same ? cur.llm?.apiKey || '' : '';
+		const typed = await ask.secret(
+			kept ? '   API key (enter keeps the current one):' : p.needsKey ? '   API key:' : '   API key (enter for none):'
+		);
+		c.llm.apiKey = typed || kept;
 	}
-	if (provider === 'ollama') {
-		let problem = await checks.llm(llmUrl, llmModel, llmKey);
+	let problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
+	if (c.provider === 'ollama') {
 		if (problem && !checks.has('ollama')) {
 			ask.say(`   ✗ ${problem}`);
 			if (await ask.yes(`   Install Ollama now? (${OLLAMA_INSTALL})`, true)) {
 				await checks.run(OLLAMA_INSTALL);
-				problem = await checks.llm(llmUrl, llmModel, llmKey);
+				problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
 			}
 		}
 		if (problem && checks.has('ollama') && /not among/.test(problem)) {
 			ask.say(`   ✗ ${problem}`);
-			if (await ask.yes(`   Pull it now? (ollama pull ${llmModel})`, true)) {
-				await checks.run(`ollama pull ${llmModel}`);
-				problem = await checks.llm(llmUrl, llmModel, llmKey);
+			if (await ask.yes(`   Pull it now? (ollama pull ${c.llm.model})`, true)) {
+				await checks.run(`ollama pull ${c.llm.model}`);
+				problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
 			}
 		}
-		ask.say(problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : '   ✓ the model answers');
-	} else {
-		const problem = await checks.llm(llmUrl, llmModel, llmKey);
-		ask.say(problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : '   ✓ the model answers');
 	}
+	ask.say(problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : '   ✓ the model answers');
+}
 
-	// 3. the ears
-	ask.say();
-	ask.say('3. The ears — turning what you say into words');
+/** The Speaches address already given to the other half, if it was. */
+const speachesSoFar = (c: Choices, cur: Partial<Choices>): string => {
+	if (c.stt.kind === 'openai' && !c.stt.apiKey && c.stt.url) return c.stt.url;
+	if (cur.tts?.kind === 'openai' && !cur.tts.apiKey && cur.tts.url) return cur.tts.url;
+	return SPEACHES_URL;
+};
+
+async function stepEars(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
+	const cur = checks.current;
+	ask.say(`${n}The ears — turning what you say into words`);
+	const was =
+		cur.stt?.kind === 'whispercpp'
+			? 'whispercpp'
+			: cur.stt?.kind === 'browser'
+				? 'browser'
+				: cur.stt?.apiKey
+					? 'cloud'
+					: 'speaches';
 	const ears = await ask.choose(
 		'   Where?',
 		EARS.map((e) => ({ key: e.key, label: e.name + (e.local ? '' : '  — not local') })),
-		cur.stt?.kind === 'whispercpp' ? 'whispercpp' : cur.stt?.kind === 'browser' ? 'browser' : 'speaches'
+		was
 	);
 	const stt: Choices['stt'] = {
 		kind: 'openai',
 		url: SPEACHES_URL,
 		model: 'Systran/faster-whisper-small',
-		language: 'pt',
+		language: c.stt.language,
 		apiKey: ''
 	};
 	if (ears === 'speaches') {
-		stt.url = await ask.text('   Speaches URL', cur.stt?.url || SPEACHES_URL);
-		stt.model = await ask.text('   Whisper model', cur.stt?.model || stt.model);
+		const remembered = was === 'speaches' && cur.stt?.url ? cur.stt.url : speachesSoFar(c, cur);
+		stt.url = (await ask.text('   Speaches URL', remembered)).replace(/\/+$/, '');
+		stt.model = await ask.text('   Whisper model', (was === 'speaches' && cur.stt?.model) || stt.model);
 		if (checks.has('docker') && (await ask.yes(`   Start the Speaches container now? (${SPEACHES_RUN})`, false)))
 			await checks.run(SPEACHES_RUN);
 	} else if (ears === 'whispercpp') {
 		stt.kind = 'whispercpp';
-		stt.url = await ask.text('   whisper.cpp server URL', cur.stt?.url || 'http://127.0.0.1:8080');
+		stt.url = (
+			await ask.text('   whisper.cpp server URL', (was === 'whispercpp' && cur.stt?.url) || 'http://127.0.0.1:8080')
+		).replace(/\/+$/, '');
 	} else if (ears === 'cloud') {
-		stt.url = (await ask.text('   Endpoint', 'https://api.openai.com')).replace(/\/+$/, '');
-		stt.model = await ask.text('   Model', OPENAI_STT_MODEL);
-		stt.apiKey = await ask.secret('   API key:');
+		stt.url = (await ask.text('   Endpoint', (was === 'cloud' && cur.stt?.url) || 'https://api.openai.com')).replace(
+			/\/+$/,
+			''
+		);
+		stt.model = await ask.text('   Model', (was === 'cloud' && cur.stt?.model) || OPENAI_STT_MODEL);
+		const kept = was === 'cloud' ? cur.stt?.apiKey || '' : '';
+		stt.apiKey = (await ask.secret(kept ? '   API key (enter keeps the current one):' : '   API key:')) || kept;
 	} else {
 		stt.kind = 'browser';
 	}
+	c.stt = stt;
+}
 
-	// 4. the voice
-	ask.say();
-	ask.say('4. The voice — reading the answers aloud');
+async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
+	const cur = checks.current;
+	ask.say(`${n}The voice — reading the answers aloud`);
+	const was =
+		cur.tts?.kind === 'piper'
+			? 'piper'
+			: cur.tts?.kind === 'openai'
+				? cur.tts.apiKey
+					? 'cloud'
+					: 'speaches'
+				: 'browser';
 	const voice = await ask.choose(
 		'   Where?',
 		VOICES.map((v) => ({ key: v.key, label: v.name + (v.local ? '' : '  — not local') })),
-		cur.tts?.kind === 'piper' ? 'piper' : cur.tts?.kind === 'openai' ? 'speaches' : 'browser'
+		was
 	);
 	const tts: Choices['tts'] = { kind: 'browser', url: SPEACHES_URL, model: '', voice: '', apiKey: '', piperModel: '' };
 	if (voice === 'piper') {
@@ -242,33 +327,41 @@ export async function runWizard(ask: Ask, checks: Checks): Promise<Choices> {
 		if (!checks.has('piper')) ask.say('   (piper is not on the PATH yet — https://github.com/rhasspy/piper)');
 	} else if (voice === 'speaches') {
 		tts.kind = 'openai';
-		tts.url = await ask.text(
-			'   Speaches URL',
-			stt.url.startsWith('http') && ears === 'speaches' ? stt.url : SPEACHES_URL
-		);
-		tts.model = await ask.text('   Model', SPEACHES_TTS_MODEL);
-		tts.voice = await ask.text('   Voice', SPEACHES_TTS_VOICE);
+		const remembered = was === 'speaches' && cur.tts?.url ? cur.tts.url : speachesSoFar(c, cur);
+		tts.url = (await ask.text('   Speaches URL', remembered)).replace(/\/+$/, '');
+		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
+		tts.voice = await ask.text('   Voice', (was === 'speaches' && cur.tts?.voice) || SPEACHES_TTS_VOICE);
 	} else if (voice === 'cloud') {
 		tts.kind = 'openai';
-		tts.url = (await ask.text('   Endpoint', 'https://api.openai.com')).replace(/\/+$/, '');
-		tts.model = await ask.text('   Model', OPENAI_TTS_MODEL);
-		tts.voice = await ask.text('   Voice', OPENAI_TTS_VOICE);
-		tts.apiKey = stt.apiKey && stt.url === tts.url ? stt.apiKey : await ask.secret('   API key:');
+		tts.url = (await ask.text('   Endpoint', (was === 'cloud' && cur.tts?.url) || 'https://api.openai.com')).replace(
+			/\/+$/,
+			''
+		);
+		tts.model = await ask.text('   Model', (was === 'cloud' && cur.tts?.model) || OPENAI_TTS_MODEL);
+		tts.voice = await ask.text('   Voice', (was === 'cloud' && cur.tts?.voice) || OPENAI_TTS_VOICE);
+		const kept = was === 'cloud' ? cur.tts?.apiKey || '' : '';
+		tts.apiKey =
+			c.stt.apiKey && c.stt.url === tts.url
+				? c.stt.apiKey
+				: (await ask.secret(kept ? '   API key (enter keeps the current one):' : '   API key:')) || kept;
 	}
+	c.tts = tts;
+}
 
-	// 5. the name and the language
-	ask.say();
-	ask.say('5. The assistant');
-	const name = await ask.text('   Its name', cur.name || 'Onto');
-	const language = await ask.text('   The language it answers in (a tag: pt-BR, en, es…)', cur.language || 'pt-BR');
-	stt.language = sttLanguage(language);
+async function stepAssistant(ask: Ask, c: Choices, n: string): Promise<void> {
+	ask.say(`${n}The assistant`);
+	c.name = await ask.text('   Its name', c.name);
+	c.language = await ask.text('   The language it answers in (a tag: pt-BR, en, es…)', c.language);
+	c.stt.language = sttLanguage(c.language);
+}
 
-	// 6. reaching it
-	ask.say();
-	ask.say('6. Reaching it from the phone');
-	ask.say('   The microphone only opens on https, so the phone needs an https address for this computer.');
+async function stepReach(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
+	const cur = checks.current;
+	ask.say(`${n}Reaching it from another device`);
+	ask.say("   In this computer's own browser the page works as it is. A phone needs an https address for this");
+	ask.say('   computer: its microphone only opens on https.');
 	const tailscale = checks.has('tailscale') ? await checks.tailscaleName() : null;
-	const reach = await ask.choose(
+	c.reach = (await ask.choose(
 		'   How?',
 		[
 			{
@@ -295,43 +388,29 @@ export async function runWizard(ask: Ask, checks: Checks): Promise<Choices> {
 			{
 				key: 'loopback',
 				label: 'Only this computer, for now',
-				note: 'http://127.0.0.1 — the page works here; a phone cannot reach it yet.'
+				note: `http://127.0.0.1:${c.port}, in a browser on this computer. No other device can reach it yet.`
 			}
 		],
 		cur.reach || (tailscale ? 'tailscale' : 'loopback')
-	);
-	const port = cur.port || DEFAULT_PORT;
-	let publicUrl = '';
-	let host = '127.0.0.1';
-	const tls = { cert: '', key: '' };
-	if (reach === 'tailscale') {
-		publicUrl = tailscale
+	)) as Choices['reach'];
+	c.publicUrl = '';
+	c.host = '127.0.0.1';
+	c.tls = { cert: '', key: '' };
+	if (c.reach === 'tailscale') {
+		c.publicUrl = tailscale
 			? `https://${tailscale}`
 			: await ask.text('   The https name Tailscale gives this computer', cur.publicUrl || '');
-		if (checks.has('tailscale') && (await ask.yes(`   Run \`tailscale serve --bg ${port}\` now?`, true)))
-			await checks.run(`tailscale serve --bg ${port}`);
-	} else if (reach === 'proxy') {
-		publicUrl = (await ask.text('   The https address the proxy answers on', cur.publicUrl || '')).replace(/\/+$/, '');
-	} else if (reach === 'tls') {
-		tls.cert = await ask.text('   Certificate file', cur.tls?.cert || '');
-		tls.key = await ask.text('   Key file', cur.tls?.key || '');
-		host = '0.0.0.0';
-		publicUrl = (await ask.text('   The https address the phone opens', cur.publicUrl || '')).replace(/\/+$/, '');
+		if (checks.has('tailscale') && (await ask.yes(`   Run \`tailscale serve --bg ${c.port}\` now?`, true)))
+			await checks.run(`tailscale serve --bg ${c.port}`);
+	} else if (c.reach === 'proxy') {
+		c.publicUrl = (await ask.text('   The https address the proxy answers on', cur.publicUrl || '')).replace(
+			/\/+$/,
+			''
+		);
+	} else if (c.reach === 'tls') {
+		c.tls.cert = await ask.text('   Certificate file', cur.tls?.cert || '');
+		c.tls.key = await ask.text('   Key file', cur.tls?.key || '');
+		c.host = '0.0.0.0';
+		c.publicUrl = (await ask.text('   The https address the device opens', cur.publicUrl || '')).replace(/\/+$/, '');
 	}
-
-	return {
-		appUrl,
-		token,
-		provider,
-		llm: { url: llmUrl, model: llmModel, apiKey: llmKey },
-		stt,
-		tts,
-		name,
-		language,
-		reach: reach as Choices['reach'],
-		publicUrl,
-		host,
-		port,
-		tls
-	};
 }

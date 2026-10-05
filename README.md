@@ -39,9 +39,11 @@ on your PATH, and asks six questions:
    its own certificate, or only this computer for now.
 
 Then it writes `~/.config/ontoplano-chat/config.toml`, offers to run as a
-service, and prints a pairing code. Open the address on the phone, type the
-code, add it to the home screen. Run `ontoplano-chat setup` again any time;
-it keeps what it knows.
+service, and prints a pairing code. Open the address on the device — a phone,
+or a browser on this computer — type the code, and on a phone add it to the
+home screen. `ontoplano-chat setup` again keeps what it knows, and
+`ontoplano-chat setup ears` (or `app`, `model`, `voice`, `assistant`,
+`reach`) asks one step again — changing a port is one question.
 
 ```
    phone (PWA)  ──https──▶  ontoplano-chat (your computer)  ──▶  the model: Ollama here, or a provider
@@ -106,6 +108,7 @@ here is what each means:
 
 ```
 ontoplano-chat setup      the six questions; writes the config, prints a pairing code
+ontoplano-chat setup <step>   one of them again: app · model · ears · voice · assistant · reach
 ontoplano-chat serve      run the server
 ontoplano-chat pair       print a pairing code (ten minutes, one use)
 ontoplano-chat devices    the paired phones
