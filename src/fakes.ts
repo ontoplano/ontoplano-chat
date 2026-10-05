@@ -187,7 +187,7 @@ export const fakeStt: Stt = {
 	kind: 'openai',
 	about: 'fake ears',
 	async transcribe(audio) {
-		return Buffer.from(audio).toString('utf8');
+		return { text: Buffer.from(audio).toString('utf8'), language: null };
 	},
 	async check() {
 		return null;

@@ -110,7 +110,7 @@ describe('the wizard', () => {
 
 	it('Tailscale: takes the tailnet name and offers `tailscale serve`', async () => {
 		const c = checks({ has: (cmd) => cmd === 'tailscale', tailscaleName: async () => 'lobo.tail1234.ts.net' });
-		const choices = await runWizard(scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '1', 'y']), c);
+		const choices = await runWizard(scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '', '1', 'y']), c);
 		expect(choices.reach).toBe('tailscale');
 		expect(choices.publicUrl).toBe('https://lobo.tail1234.ts.net');
 		expect(c.ran).toContain('tailscale serve --bg 1497');
@@ -118,7 +118,7 @@ describe('the wizard', () => {
 
 	it('its own certificate opens the host', async () => {
 		const choices = await runWizard(
-			scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '3', '/c.pem', '/k.pem', 'https://onto.lan']),
+			scriptedAsk(['', 'tok', '', '', '', '', '', '', '', '', '', '', '3', '/c.pem', '/k.pem', 'https://onto.lan']),
 			checks()
 		);
 		expect(choices.reach).toBe('tls');
@@ -182,7 +182,7 @@ describe('one step alone', () => {
 
 	it('offers what the config says, and does not change it just by being asked', async () => {
 		const choices = await runWizard(scriptedAsk([]), checks({ current }), 'voice');
-		expect(choices.tts).toEqual(current.tts);
+		expect(choices.tts).toMatchObject(current.tts);
 		expect(current.tts.url).toBe('http://127.0.0.1:8888');
 	});
 
@@ -246,7 +246,7 @@ describe('a Speaches that is not there', () => {
 			current,
 			speech: async (url) => (url.endsWith('7749') ? null : `nothing answers at ${url}: fetch failed`)
 		});
-		const choices = await runWizard(scriptedAsk(['3', '', '', '', 'y']), c, 'voice');
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', '', 'y']), c, 'voice');
 		expect(choices.tts.url).toBe('http://127.0.0.1:7749');
 		expect(choices.stt.url).toBe('http://127.0.0.1:7749');
 	});
@@ -262,7 +262,7 @@ describe('a Speaches that is not there', () => {
 				return true;
 			}
 		});
-		const choices = await runWizard(scriptedAsk(['3', '', '', '', 'n']), c, 'voice');
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', '', 'n']), c, 'voice');
 		expect(started).toBe('speaches-voice@http://127.0.0.1:7748');
 		expect(choices.tts.url).toBe('http://127.0.0.1:7748');
 	});
@@ -283,8 +283,9 @@ describe('the voice follows the language', () => {
 				piperModel: ''
 			}
 		};
-		const choices = await runWizard(scriptedAsk(['3', '', '', '']), checks({ current }), 'voice');
-		expect(choices.tts.voice).toBe('pf_dora');
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', '']), checks({ current }), 'voice');
+		expect(choices.tts.voice).toBe('pm_alex');
+		expect(choices.tts.gender).toBe('male');
 	});
 
 	it('changing the language moves the voice with it', async () => {
@@ -302,6 +303,15 @@ describe('the voice follows the language', () => {
 		};
 		const choices = await runWizard(scriptedAsk(['', 'pt-BR']), checks({ current }), 'assistant');
 		expect(choices.tts.voice).toBe('pf_dora');
+	});
+});
+
+describe('the language, detected', () => {
+	it('auto is asked, and written', async () => {
+		const current = { token: 'kept', language: 'pt-BR' };
+		const choices = await runWizard(scriptedAsk(['', '', 'y']), checks({ current }), 'assistant');
+		expect(choices.stt.language).toBe('auto');
+		expect(fromToml(renderConfig(choices), env).stt.language).toBe('auto');
 	});
 });
 

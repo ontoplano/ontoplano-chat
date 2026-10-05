@@ -75,7 +75,13 @@ type Pending = {
 	expiresAt: number;
 };
 
-type Conversation = { messages: Message[]; touchedAt: number; pending: Pending | null };
+type Conversation = {
+	messages: Message[];
+	touchedAt: number;
+	pending: Pending | null;
+	/** The language the person last spoke in, when the ears detect it; else the configured one. */
+	language: string;
+};
 
 const LANGUAGE_KEY = (language: string): string => language.toLowerCase().split(/[-_]/)[0] ?? 'en';
 
@@ -94,7 +100,7 @@ export class Assistant {
 		const t = this.now().getTime();
 		let c = this.conversations.get(device);
 		if (!c || t - c.touchedAt > CONVERSATION_IDLE_MS) {
-			c = { messages: [], touchedAt: t, pending: null };
+			c = { messages: [], touchedAt: t, pending: null, language: this.o.language };
 			this.conversations.set(device, c);
 		}
 		c.touchedAt = t;
@@ -124,13 +130,13 @@ export class Assistant {
 		return matchesAny(name, this.o.confirm);
 	}
 
-	private system(): Message {
+	private system(language: string): Message {
 		const facts = nowFacts(this.now(), this.o.language);
 		return {
 			role: 'system',
 			content: systemPrompt({
 				name: this.o.name,
-				language: this.o.language,
+				language,
 				toolCount: this.o.tools().length,
 				...facts
 			})
@@ -143,7 +149,12 @@ export class Assistant {
 		let heard = (input.text ?? '').trim();
 		try {
 			if (input.audio) {
-				heard = (await this.o.stt.transcribe(input.audio.bytes, input.audio.mime)).trim();
+				const said = await this.o.stt.transcribe(input.audio.bytes, input.audio.mime);
+				heard = said.text;
+				if (said.language) {
+					c.language = said.language;
+					this.log(`[${device}] language heard: ${said.language}`);
+				}
 				emit({ type: 'transcript', text: heard });
 				if (!heard) {
 					emit({ type: 'error', message: 'nothing-heard' });
@@ -158,12 +169,12 @@ export class Assistant {
 				return;
 			}
 			if (c.pending) {
-				const answer = yesOrNo(heard, this.o.language);
+				const answer = yesOrNo(heard, c.language);
 				if (answer !== null) return this.resume(device, c.pending.id, answer, emit);
 				// Something else was said: the question lapses and the new thing is heard.
 				c.pending = null;
 			}
-			const messages: Message[] = [this.system(), ...this.recentContext(c), { role: 'user', content: heard }];
+			const messages: Message[] = [this.system(c.language), ...this.recentContext(c), { role: 'user', content: heard }];
 			await this.run(device, c, messages, 0, [], heard, emit);
 		} catch (e) {
 			emit({ type: 'error', message: (e as Error).message });
@@ -355,7 +366,7 @@ export class Assistant {
 		if (c.messages.length > keep) c.messages.splice(0, c.messages.length - keep);
 		this.o.history.append({ at: this.now().toISOString(), device, heard, reply: text, actions });
 		try {
-			const spoken = await this.o.tts.speak(text);
+			const spoken = await this.o.tts.speak(text, c.language.toLowerCase().split(/[-_]/)[0]);
 			if (spoken) emit({ type: 'audio', mime: spoken.mime, base64: Buffer.from(spoken.bytes).toString('base64') });
 		} catch (e) {
 			emit({ type: 'error', message: `voice: ${(e as Error).message}` });

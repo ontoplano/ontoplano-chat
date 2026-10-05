@@ -66,6 +66,16 @@ home screen. `ontoplano-chat setup` again keeps what it knows, and
 - **Asks before anything irreversible.** Removing, dropping, cancelling: the
   turn stops and asks. Yes and No are buttons, and "sim" or "no" said aloud
   works too.
+- **Stops talking when you do.** Pressing the bar while it speaks cuts the
+  voice off (and a hold goes straight on to listening); so does Escape, and
+  so does sending anything new.
+- **Speaks your language, in the voice you chose.** `ontoplano-chat setup
+assistant` can let whisper detect the language you speak each turn; the
+  answer and the voice follow it. Detection is free — whisper guesses the
+  language first anyway — but on a two-word clip it is sometimes wrong, so a
+  fixed language is the safer choice if you only ever speak one. `setup
+voice` picks a male or a female voice; Kokoro has both for most languages
+  (French has only a female one).
 - **Remembers the conversation** for half an hour, so "and put it on
   Friday" follows "add a task to call the bank".
 - **Keeps a log** of what was heard, said and done, readable on the phone

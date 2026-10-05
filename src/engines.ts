@@ -121,7 +121,13 @@ export function buildEngines(
 			? browserTts
 			: c.tts.kind === 'piper'
 				? piperTts({ command: c.tts.piperCommand, model: c.tts.piperModel })
-				: openAiTts({ url: c.tts.url, model: c.tts.model, voice: c.tts.voice, apiKey: c.tts.apiKey });
+				: openAiTts({
+						url: c.tts.url,
+						model: c.tts.model,
+						voice: c.tts.voice,
+						apiKey: c.tts.apiKey,
+						gender: c.tts.gender
+					});
 	return {
 		llm,
 		stt,

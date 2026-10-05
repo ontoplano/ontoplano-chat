@@ -7,24 +7,34 @@
  */
 import { spawn } from 'node:child_process';
 
-import { SPEECH_TIMEOUT_MS } from './constants.js';
+import {
+	kokoroGenderOf,
+	kokoroLanguageOf,
+	kokoroVoiceFor,
+	SPEECH_TIMEOUT_MS,
+	WHISPER_LANGUAGE_NAMES,
+	type Gender
+} from './constants.js';
 
 export type Stt = {
 	kind: 'openai' | 'whispercpp' | 'browser';
 	/** What it is, for a person: the model and where it runs — never the API flavour alone. */
 	about: string;
-	transcribe(audio: Uint8Array, mime: string, language?: string): Promise<string>;
+	/** What was said, and the language whisper heard it in when it was asked to detect it. */
+	transcribe(audio: Uint8Array, mime: string, language?: string): Promise<Heard>;
 	check(): Promise<string | null>;
 };
 
 export type Spoken = { mime: string; bytes: Uint8Array };
 
+export type Heard = { text: string; language: string | null };
+
 export type Tts = {
 	kind: 'openai' | 'piper' | 'browser';
 	/** What it is, for a person: the voice and where it runs — never the API flavour alone. */
 	about: string;
-	/** `null` when the device speaks for itself. */
-	speak(text: string): Promise<Spoken | null>;
+	/** `null` when the device speaks for itself. `language` picks that language's voice, where the voice can follow. */
+	speak(text: string, language?: string): Promise<Spoken | null>;
 	check(): Promise<string | null>;
 };
 
@@ -141,8 +151,10 @@ export function httpStt(o: SttOptions): Stt {
 		async transcribe(audio, mime, language = o.language) {
 			const form = new FormData();
 			form.append('file', new Blob([audio], { type: mime }), `turn.${extensionOf(mime)}`);
-			form.append('response_format', 'json');
-			if (language) form.append('language', language);
+			const detect = !language || language === 'auto';
+			// verbose_json is what carries the detected language back.
+			form.append('response_format', detect ? 'verbose_json' : 'json');
+			if (!detect) form.append('language', language);
 			if (o.prompt) form.append('prompt', o.prompt);
 			if (o.kind === 'openai') form.append('model', o.model);
 			let res: Response;
@@ -160,8 +172,12 @@ export function httpStt(o: SttOptions): Stt {
 				throw new SpeechError(
 					`the transcriber at ${o.url} answered ${saidBy(res.status, await res.text())}${res.status === 404 ? ` to POST ${o.path} — is that a Speaches / whisper server?` : ''}`
 				);
-			const body = (await res.json()) as { text?: string };
-			return (body.text ?? '').trim();
+			const body = (await res.json()) as { text?: string; language?: string };
+			const said = (body.language ?? '').toLowerCase();
+			return {
+				text: (body.text ?? '').trim(),
+				language: detect && said ? (WHISPER_LANGUAGE_NAMES[said] ?? said.slice(0, 2)) : null
+			};
 		},
 		async check() {
 			if (o.kind === 'whispercpp') {
@@ -202,7 +218,15 @@ export const browserTts: Tts = {
 	check: async () => null
 };
 
-type OpenAiTtsOptions = { url: string; model: string; voice: string; apiKey?: string; fetchImpl?: typeof fetch };
+type OpenAiTtsOptions = {
+	url: string;
+	model: string;
+	voice: string;
+	apiKey?: string;
+	/** When the voice is one of Kokoro's, the gender of the voice a turn in another language switches to. */
+	gender?: Gender;
+	fetchImpl?: typeof fetch;
+};
 
 export function openAiTts(o: OpenAiTtsOptions): Tts {
 	const fetchImpl = o.fetchImpl ?? fetch;
@@ -211,14 +235,19 @@ export function openAiTts(o: OpenAiTtsOptions): Tts {
 	return {
 		kind: 'openai',
 		about: `${o.voice || o.model} at ${o.url}${o.apiKey ? '' : ' (an OpenAI-compatible server)'}`,
-		async speak(text) {
+		async speak(text, language) {
+			// A Kokoro voice follows the language of the turn; any other voice is what it is.
+			const voice =
+				language && kokoroLanguageOf(o.voice) && kokoroLanguageOf(o.voice) !== language
+					? kokoroVoiceFor(language, o.gender ?? kokoroGenderOf(o.voice) ?? 'male')
+					: o.voice;
 			let res: Response;
 			try {
 				res = await fetchImpl(`${o.url}/v1/audio/speech`, {
 					method: 'POST',
 					headers,
 					signal: AbortSignal.timeout(SPEECH_TIMEOUT_MS),
-					body: JSON.stringify({ model: o.model, voice: o.voice, input: text, response_format: 'mp3' })
+					body: JSON.stringify({ model: o.model, voice, input: text, response_format: 'mp3' })
 				});
 			} catch (e) {
 				throw new SpeechError(`no voice at ${o.url}: ${(e as Error).message}`);

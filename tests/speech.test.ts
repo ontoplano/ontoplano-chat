@@ -84,3 +84,51 @@ describe('a local speech server', () => {
 		expect(await speechServerCheck('http://127.0.0.1:1', 'x', undefined)).toMatch(/nothing answers at/);
 	});
 });
+
+describe('the language spoken', () => {
+	it('auto asks whisper to detect it and hands it back as a code', async () => {
+		const sent: string[] = [];
+		const ears = httpStt({
+			kind: 'openai',
+			url: 'http://x',
+			path: '/v1/audio/transcriptions',
+			model: 'w',
+			language: 'auto',
+			fetchImpl: async (_u, init) => {
+				const form = init?.body as FormData;
+				sent.push(`${form.get('response_format')}|${form.get('language') ?? ''}`);
+				return Response.json({ text: 'olá', language: 'portuguese' });
+			}
+		});
+		expect(await ears.transcribe(new Uint8Array([1]), 'audio/webm')).toEqual({ text: 'olá', language: 'pt' });
+		expect(sent[0]).toBe('verbose_json|');
+	});
+
+	it('a fixed language is sent, and nothing is claimed to be detected', async () => {
+		const ears = httpStt({
+			kind: 'openai',
+			url: 'http://x',
+			path: '/v1/audio/transcriptions',
+			model: 'w',
+			language: 'pt',
+			fetchImpl: async () => Response.json({ text: 'olá' })
+		});
+		expect(await ears.transcribe(new Uint8Array([1]), 'audio/webm')).toEqual({ text: 'olá', language: null });
+	});
+
+	it('a Kokoro voice switches to the turn language, keeping its gender', async () => {
+		const voices: string[] = [];
+		const voice = openAiTts({
+			url: 'http://x',
+			model: 'k',
+			voice: 'pm_alex',
+			fetchImpl: async (_u, init) => {
+				voices.push((JSON.parse(String(init?.body)) as { voice: string }).voice);
+				return new Response(new Uint8Array([1]), { headers: { 'content-type': 'audio/mpeg' } });
+			}
+		});
+		await voice.speak('hello', 'en');
+		await voice.speak('olá', 'pt');
+		expect(voices).toEqual(['am_michael', 'pm_alex']);
+	});
+});

@@ -111,8 +111,10 @@ describe('the defaults that follow the person', () => {
 
 	it('a Kokoro voice is picked for the language, and its language read from its name', async () => {
 		const { kokoroLanguageOf, kokoroVoiceFor } = await import('../src/constants.js');
-		expect(kokoroVoiceFor('pt-BR')).toBe('pf_dora');
-		expect(kokoroVoiceFor('en')).toBe('af_heart');
+		expect(kokoroVoiceFor('pt-BR')).toBe('pm_alex');
+		expect(kokoroVoiceFor('pt-BR', 'female')).toBe('pf_dora');
+		expect(kokoroVoiceFor('fr')).toBe('ff_siwis');
+		expect(kokoroVoiceFor('en')).toBe('am_michael');
 		expect(kokoroLanguageOf('bm_lewis')).toBe('en');
 		expect(kokoroLanguageOf('pm_alex')).toBe('pt');
 		expect(kokoroLanguageOf('alloy')).toBeNull();

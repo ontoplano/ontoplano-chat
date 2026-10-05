@@ -25,6 +25,7 @@ import {
 	OPENAI_TTS_VOICE,
 	PROVIDERS,
 	SPEACHES_TTS_MODEL,
+	kokoroGenderOf,
 	kokoroLanguageOf,
 	kokoroVoiceFor,
 	SPEACHES_URL,
@@ -45,6 +46,7 @@ export type Choices = {
 		voice: string;
 		apiKey: string;
 		piperModel: string;
+		gender?: 'male' | 'female';
 	};
 	name: string;
 	language: string;
@@ -125,6 +127,7 @@ kind = ${quote(c.tts.kind)}
 url = ${quote(c.tts.url)}
 model = ${quote(c.tts.model)}
 voice = ${quote(c.tts.voice)}
+gender = ${quote(c.tts.gender ?? 'male')}
 api_key = ${quote(c.tts.apiKey)}
 piper_model = ${quote(c.tts.piperModel)}
 
@@ -242,7 +245,7 @@ export async function runWizard(ask: Ask, checks: Checks, only?: Step): Promise<
 		else if (step === 'model') await stepModel(ask, checks, c, number(step));
 		else if (step === 'ears') await stepEars(ask, checks, c, number(step));
 		else if (step === 'voice') await stepVoice(ask, checks, c, number(step));
-		else if (step === 'assistant') await stepAssistant(ask, c, number(step));
+		else if (step === 'assistant') await stepAssistant(ask, checks, c, number(step));
 		else await stepReach(ask, checks, c, number(step));
 		if (steps.length > 1) ask.say();
 	}
@@ -413,12 +416,24 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 		const remembered = was === 'speaches' && cur.tts?.url ? cur.tts.url : speachesSoFar(c, cur);
 		tts.url = normalizeUrl(await ask.text('   Speaches URL', remembered));
 		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
+		const gender = (await ask.choose(
+			'   A male or a female voice?',
+			[
+				{ key: 'male', label: 'male' },
+				{ key: 'female', label: 'female' }
+			],
+			cur.tts?.gender ?? (cur.tts?.voice ? (kokoroGenderOf(cur.tts.voice) ?? 'male') : 'male')
+		)) as 'male' | 'female';
+		tts.gender = gender;
 		const kept = was === 'speaches' ? cur.tts?.voice : undefined;
-		const keptSpeaks = kept ? kokoroLanguageOf(kept) : null;
 		const want = c.language.toLowerCase().split(/[-_]/)[0];
-		// A kept voice in another language is not offered back: that is how it came to speak English.
-		const voiceDefault = kept && (!keptSpeaks || keptSpeaks === want) ? kept : kokoroVoiceFor(c.language);
-		tts.voice = await ask.text(`   Voice (Kokoro's for ${c.language}: ${kokoroVoiceFor(c.language)})`, voiceDefault);
+		// A kept voice in another language or of the other gender is not offered back.
+		const keptFits = kept && kokoroLanguageOf(kept) === want && kokoroGenderOf(kept) === gender;
+		const voiceDefault = keptFits ? kept : kokoroVoiceFor(c.language, gender);
+		tts.voice = await ask.text(
+			`   Voice (Kokoro's ${gender} one for ${c.language}: ${kokoroVoiceFor(c.language, gender)})`,
+			voiceDefault
+		);
 		const other = c.stt.kind === 'openai' && !c.stt.apiKey ? c.stt.url : undefined;
 		tts.url = await speechReady(ask, checks, tts.url, tts.model, '', { other, name: 'speaches-voice' });
 	} else if (voice === 'cloud') {
@@ -437,15 +452,23 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	c.tts = tts;
 }
 
-async function stepAssistant(ask: Ask, c: Choices, n: string): Promise<void> {
+async function stepAssistant(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {
 	ask.say(`${n}The assistant`);
 	c.name = await ask.text('   Its name', c.name);
 	c.language = await ask.text('   The language it answers in (a tag: pt-BR, en, es…)', c.language);
-	c.stt.language = sttLanguage(c.language);
+	const wasAuto = checks.current.stt?.language === 'auto';
+	const auto =
+		c.stt.kind !== 'browser' &&
+		(await ask.yes(
+			'   Detect the language you speak, each time, and answer in it? (whisper guesses it; on a two-word clip it is sometimes wrong)',
+			wasAuto
+		));
+	c.stt.language = auto ? 'auto' : sttLanguage(c.language);
+	const answersIn = sttLanguage(c.language);
 	const speaks = c.tts.kind === 'openai' ? kokoroLanguageOf(c.tts.voice) : null;
-	if (speaks && speaks !== c.stt.language) {
-		const next = kokoroVoiceFor(c.language);
-		ask.say(`   the voice ${c.tts.voice} speaks ${speaks}; it becomes ${next}, which speaks ${c.stt.language}`);
+	if (speaks && speaks !== answersIn) {
+		const next = kokoroVoiceFor(c.language, c.tts.gender ?? kokoroGenderOf(c.tts.voice) ?? 'male');
+		ask.say(`   the voice ${c.tts.voice} speaks ${speaks}; it becomes ${next}, which speaks ${answersIn}`);
 		c.tts.voice = next;
 	}
 }

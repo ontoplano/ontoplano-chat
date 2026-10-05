@@ -54,6 +54,8 @@ export type Config = {
 		url: string;
 		model: string;
 		voice: string;
+		/** Which of a language's voices to use when the voice follows the language spoken. */
+		gender: 'male' | 'female';
 		apiKey: string;
 		piperCommand: string;
 		piperModel: string;
@@ -142,6 +144,7 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 			url: 'http://127.0.0.1:8000',
 			model: 'speaches-ai/piper-pt_BR-faber-medium',
 			voice: 'pt_BR-faber-medium',
+			gender: 'male',
 			apiKey: '',
 			piperCommand: 'piper',
 			piperModel: '~/.local/share/piper/pt_BR-faber-medium.onnx'
@@ -228,6 +231,7 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 			url: normalizeUrl(str(tts, 'url', d.tts.url)),
 			model: str(tts, 'model', d.tts.model),
 			voice: str(tts, 'voice', d.tts.voice),
+			gender: str(tts, 'gender', d.tts.gender) === 'female' ? 'female' : 'male',
 			apiKey: env.ONTOPLANO_CHAT_TTS_KEY ?? str(tts, 'api_key', ''),
 			piperCommand: expandHome(str(tts, 'piper_command', d.tts.piperCommand)),
 			piperModel: expandHome(str(tts, 'piper_model', d.tts.piperModel))
@@ -346,6 +350,8 @@ tool_description_chars = ${DEFAULT_TOOL_DESCRIPTION_CHARS}
 kind = "openai"
 url = "http://127.0.0.1:8000"
 model = "Systran/faster-whisper-small"
+# "auto" lets whisper detect the language you speak, each turn; the answer and
+# the voice follow it.
 language = "pt"
 # Only a cloud transcriber wants one.
 api_key = ""
@@ -360,6 +366,8 @@ kind = "browser"
 url = "http://127.0.0.1:8000"
 model = "speaches-ai/piper-pt_BR-faber-medium"
 voice = "pt_BR-faber-medium"
+# male or female, when the voice follows the language spoken.
+gender = "male"
 api_key = ""
 piper_command = "piper"
 piper_model = "~/.local/share/piper/pt_BR-faber-medium.onnx"

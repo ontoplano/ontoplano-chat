@@ -232,15 +232,16 @@ async function doctor(): Promise<number> {
 	);
 	const speaks = c.tts.kind === 'openai' ? kokoroLanguageOf(c.tts.voice) : null;
 	const wants = c.assistant.language.toLowerCase().split(/[-_]/)[0];
+	// With the language detected, the voice follows each turn: no mismatch to fail.
 	const ttsProblem =
-		speaks && speaks !== wants
+		speaks && speaks !== wants && c.stt.language !== 'auto'
 			? `the voice ${c.tts.voice} speaks ${speaks}, and the assistant answers in ${c.assistant.language}`
 			: await engines.tts.check();
 	tell(
 		`voice: ${engines.tts.about}`,
 		ttsProblem,
 		ttsProblem && /speaks/.test(ttsProblem)
-			? `a ${c.assistant.language} voice: ontoplano-chat setup voice (it offers ${kokoroVoiceFor(c.assistant.language)})`
+			? `a ${c.assistant.language} voice: ontoplano-chat setup voice (it offers ${kokoroVoiceFor(c.assistant.language, c.tts.gender)})`
 			: ttsProblem && /not installed/.test(ttsProblem)
 				? 'download it: `ontoplano-chat models` — or `ontoplano-chat setup voice`'
 				: engines.tts.kind === 'piper'

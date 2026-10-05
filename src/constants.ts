@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.11' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.12' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;
@@ -262,23 +262,45 @@ export const SPEACHES_TTS_VOICE = 'af_heart';
  * letter is not the assistant's language reads Portuguese with an English
  * mouth — the default follows the language, and doctor says when they part.
  */
-export const KOKORO_LANGUAGES: Record<string, { lang: string; voice: string }> = {
-	a: { lang: 'en', voice: 'af_heart' },
-	b: { lang: 'en', voice: 'bf_emma' },
-	e: { lang: 'es', voice: 'ef_dora' },
-	f: { lang: 'fr', voice: 'ff_siwis' },
-	h: { lang: 'hi', voice: 'hf_alpha' },
-	i: { lang: 'it', voice: 'if_sara' },
-	j: { lang: 'ja', voice: 'jf_alpha' },
-	p: { lang: 'pt', voice: 'pf_dora' },
-	z: { lang: 'zh', voice: 'zf_xiaobei' }
+export type Gender = 'male' | 'female';
+
+export const KOKORO_LANGUAGES: Record<string, { lang: string; male: string | null; female: string }> = {
+	a: { lang: 'en', male: 'am_michael', female: 'af_heart' },
+	e: { lang: 'es', male: 'em_alex', female: 'ef_dora' },
+	f: { lang: 'fr', male: null, female: 'ff_siwis' },
+	h: { lang: 'hi', male: 'hm_omega', female: 'hf_alpha' },
+	i: { lang: 'it', male: 'im_nicola', female: 'if_sara' },
+	j: { lang: 'ja', male: 'jm_kumo', female: 'jf_alpha' },
+	p: { lang: 'pt', male: 'pm_alex', female: 'pf_dora' },
+	z: { lang: 'zh', male: 'zm_yunjian', female: 'zf_xiaobei' },
+	b: { lang: 'en', male: 'bm_george', female: 'bf_emma' }
 };
 
-/** The Kokoro voice for a language tag (pt-BR → pf_dora), or the English default. */
-export function kokoroVoiceFor(language: string): string {
+/** The Kokoro voice for a language tag and a gender (pt-BR, male → pm_alex); a language with no male voice gets its female one. */
+export function kokoroVoiceFor(language: string, gender: Gender = 'male'): string {
 	const key = language.toLowerCase().split(/[-_]/)[0];
-	return Object.values(KOKORO_LANGUAGES).find((v) => v.lang === key)?.voice ?? SPEACHES_TTS_VOICE;
+	const v = Object.values(KOKORO_LANGUAGES).find((x) => x.lang === key) ?? KOKORO_LANGUAGES.a!;
+	return (gender === 'male' ? v.male : null) ?? v.female;
 }
+
+/** What a Kokoro voice is, from its name: its language and gender, or null when it is not one. */
+export function kokoroGenderOf(voice: string): Gender | null {
+	const m = voice.match(/^[a-z]([fm])_/);
+	return m ? (m[1] === 'm' ? 'male' : 'female') : null;
+}
+
+/** Whisper names a detected language by code or by word; both become the code. */
+export const WHISPER_LANGUAGE_NAMES: Record<string, string> = {
+	english: 'en',
+	portuguese: 'pt',
+	spanish: 'es',
+	french: 'fr',
+	italian: 'it',
+	german: 'de',
+	japanese: 'ja',
+	chinese: 'zh',
+	hindi: 'hi'
+};
 
 /** The language a Kokoro voice speaks, from its name, or null when it is not one. */
 export function kokoroLanguageOf(voice: string): string | null {

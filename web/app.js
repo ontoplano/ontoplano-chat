@@ -51,6 +51,7 @@ const state = {
 	recordTimer: null,
 	recordTick: null,
 	recognition: null,
+	audio: null,
 	pendingAsk: null
 };
 
@@ -359,6 +360,7 @@ function handle(event, turn, meBubble) {
 }
 
 function sendText(text) {
+	stopVoice();
 	const clean = text.trim();
 	if (!clean) return;
 	addMeTurn(clean, false);
@@ -370,6 +372,7 @@ function sendText(text) {
 }
 
 function sendHeard(text) {
+	stopVoice();
 	const clean = text.trim();
 	if (!clean) return;
 	const bubble = addMeTurn(clean, true);
@@ -381,6 +384,7 @@ function sendHeard(text) {
 }
 
 function sendAudio(blob, mime) {
+	stopVoice();
 	const bubble = addMeTurn('…', true);
 	runTurn('/api/turn', { method: 'POST', headers: { 'Content-Type': mime }, body: blob }, bubble);
 }
@@ -394,6 +398,29 @@ $('typed').addEventListener('submit', (event) => {
 
 /* ---------- the voice ---------- */
 
+/** The voice is talking: the bar says so, and pressing it cuts the voice off. */
+function voiceStarted() {
+	if (!isListening()) $('talkLabel').textContent = t('chat.speaking');
+}
+
+function voiceEnded() {
+	if (!isListening() && $('talkLabel').textContent === t('chat.speaking')) $('talkLabel').textContent = t('chat.hold');
+}
+
+const isSpeaking = () =>
+	Boolean(state.audio && !state.audio.paused && !state.audio.ended) ||
+	('speechSynthesis' in window && speechSynthesis.speaking);
+
+/** Cut the voice off, wherever it is coming from. */
+function stopVoice() {
+	if (state.audio) {
+		state.audio.pause();
+		state.audio = null;
+	}
+	if ('speechSynthesis' in window) speechSynthesis.cancel();
+	voiceEnded();
+}
+
 function speak(text) {
 	if (!state.me || state.me.tts !== 'browser') return;
 	if (pref.get(SPEAK_KEY, '1') !== '1') return;
@@ -405,12 +432,21 @@ function speak(text) {
 		.getVoices()
 		.find((v) => v.lang.toLowerCase().startsWith(u.lang.toLowerCase().split('-')[0]) && v.localService);
 	if (voice) u.voice = voice;
+	u.onstart = voiceStarted;
+	u.onend = voiceEnded;
 	speechSynthesis.speak(u);
 }
 
 function play(mime, base64) {
 	if (pref.get(SPEAK_KEY, '1') !== '1') return;
+	stopVoice();
 	const audio = new Audio(`data:${mime};base64,${base64}`);
+	state.audio = audio;
+	audio.addEventListener('playing', voiceStarted);
+	audio.addEventListener('ended', () => {
+		if (state.audio === audio) state.audio = null;
+		voiceEnded();
+	});
 	audio.play().catch(() => {});
 }
 
@@ -532,6 +568,8 @@ talk.addEventListener('pointerdown', async (e) => {
 	if (talk.disabled) return;
 	e.preventDefault();
 	talk.setPointerCapture(e.pointerId);
+	// Talking over it cuts it off — and a hold goes straight on to listening.
+	if (isSpeaking()) stopVoice();
 	if (isListening()) {
 		// A tap while listening (tap mode) sends.
 		state.tapMode = false;
@@ -558,6 +596,10 @@ talk.addEventListener('pointercancel', () => {
 });
 
 window.addEventListener('keydown', (e) => {
+	if (e.key === 'Escape' && isSpeaking()) {
+		stopVoice();
+		return;
+	}
 	const tag = (e.target.tagName || '').toLowerCase();
 	if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
 	if (e.key === ' ' && !talk.disabled && state.me) {
