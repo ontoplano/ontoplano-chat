@@ -11,7 +11,7 @@
 include defaults.env
 
 .DEFAULT_GOAL := help
-.PHONY: help setup build dev serve demo pair devices doctor config test test-unit test-e2e lint format icons install-service uninstall-service logs
+.PHONY: help setup build link dev serve demo pair devices doctor config test test-unit test-e2e lint format icons install-service uninstall-service logs
 
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
@@ -26,15 +26,23 @@ help:
 	@echo "  make test              unit tests, then the browser suite"
 	@echo "  make lint              prettier, eslint, tsc"
 	@echo
-	@echo "  Switches: DEMO_PORT=$(DEMO_PORT)"
+	@echo "  make link              put \`ontoplano-chat\` on your PATH (build does it too)"
+	@echo
+	@echo "  Switches: DEMO_PORT=$(DEMO_PORT) BIN_DIR=$(BIN_DIR)"
 
 ## install, build, and ask the six questions
 setup: build
 	@node bin/ontoplano-chat.mjs setup
 
-build:
+build: link
 	@[ -d node_modules ] || yarn install --frozen-lockfile
 	@yarn -s build
+
+## the command on your PATH: ~/.local/bin/ontoplano-chat → this checkout
+link:
+	@mkdir -p $(BIN_DIR)
+	@ln -sfn $(CURDIR)/bin/ontoplano-chat.mjs $(BIN_DIR)/ontoplano-chat
+	@case ":$$PATH:" in *":$(BIN_DIR):"*) ;; *) echo "  $(BIN_DIR) is not on your PATH: add it, or call $(CURDIR)/bin/ontoplano-chat.mjs";; esac
 
 dev:
 	@yarn -s dev

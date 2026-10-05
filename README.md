@@ -132,6 +132,12 @@ config` shows a commented example of every key. The sections: `[server]`
 lives in `~/.local/share/ontoplano-chat/`: `devices.json` (hashes),
 `pairing.json` (a hashed code, briefly), `turns.jsonl` (the log).
 
+## From a checkout
+
+Without the one-liner: `make build` installs, builds and links
+`ontoplano-chat` into `~/.local/bin`; `make setup` then asks the questions;
+`make install-service` runs it as a service. `make` alone lists the rest.
+
 ## Developing
 
 ```sh
