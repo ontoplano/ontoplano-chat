@@ -19,6 +19,7 @@ function checks(over: Partial<Checks> = {}): Checks & { ran: string[] } {
 			return true;
 		},
 		tailscaleName: async () => null,
+		llmPull: async () => null,
 		speech: async () => null,
 		pull: async () => null,
 		current: {},
@@ -74,15 +75,24 @@ describe('the wizard', () => {
 
 	it('offers to install Ollama when it is missing, and to pull the model when it is', async () => {
 		let calls = 0;
+		let pulled = '';
 		const c = checks({
 			llm: async () =>
-				++calls === 1 ? 'no model runner' : calls === 2 ? 'model "qwen2.5:7b" is not among the 0' : null,
+				++calls === 1
+					? 'no model runner'
+					: calls === 2
+						? 'model "qwen2.5:7b" is not pulled: the runner lists no models'
+						: null,
+			llmPull: async (_u, model) => {
+				pulled = model;
+				return null;
+			},
 			has: (cmd) => cmd === 'ollama' && calls >= 2
 		});
 		const log: string[] = [];
 		await runWizard(scriptedAsk(['', 'tok', '', '', '', 'y', 'y'], log), c);
 		expect(c.ran[0]).toMatch(/ollama\.com\/install/);
-		expect(c.ran[1]).toBe('ollama pull qwen2.5:7b');
+		expect(pulled).toBe('qwen2.5:7b');
 		expect(log.join('\n')).toContain('✓ the model answers');
 	});
 

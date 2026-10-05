@@ -22,6 +22,8 @@ export type Llm = {
 	chat(messages: Message[], tools: LlmTool[]): Promise<Reply>;
 	/** Is the model there? `null` when all is well, else what is wrong. */
 	check(): Promise<string | null>;
+	/** Ask the runner to download the model (Ollama's /api/pull). `null` when it did, else why not. */
+	pull(): Promise<string | null>;
 	readonly model: string;
 };
 
@@ -82,14 +84,39 @@ export function openAiLlm(o: LlmOptions): Llm {
 				toolCalls: raw.map((c) => ({ id: c.id, name: c.function.name, args: parseArgs(c.function.arguments) }))
 			};
 		},
+		async pull() {
+			// Ollama's own API sits beside its OpenAI-compatible one: …/v1 → …/api/pull.
+			const base = o.url.replace(/\/v1$/, '');
+			try {
+				const res = await fetchImpl(`${base}/api/pull`, {
+					method: 'POST',
+					headers,
+					signal: AbortSignal.timeout(60 * 60 * 1000),
+					body: JSON.stringify({ model: o.model, stream: false })
+				});
+				if (res.status === 404)
+					return `the runner at ${o.url} does not pull models over its API; install ${o.model} there yourself`;
+				if (!res.ok) return `the runner answered ${res.status}: ${(await res.text()).slice(0, 200)}`;
+				const body = (await res.json().catch(() => ({}))) as { status?: string; error?: string };
+				return body.error ? `the runner said: ${body.error}` : null;
+			} catch (e) {
+				return `could not ask ${o.url} to pull it: ${(e as Error).message}`;
+			}
+		},
 		async check() {
 			try {
 				const res = await fetchImpl(`${o.url}/models`, { headers, signal: AbortSignal.timeout(5000) });
 				if (!res.ok) return `${o.url}/models answered ${res.status}`;
 				const body = (await res.json()) as { data?: { id: string }[] };
-				const ids = (body.data ?? []).map((m) => m.id);
-				if (ids.length && !ids.some((id) => id === o.model || id.startsWith(`${o.model}:`)))
-					return `model "${o.model}" is not among the ${ids.length} the runner lists (${ids.slice(0, 5).join(', ')}…)`;
+				// A local runner that lists its models — Ollama does — and does not list
+				// this one has not pulled it; an empty list is the usual way that looks.
+				// A provider behind a key names its models its own way (Gemini says
+				// models/…), so only the keyless, local case is read that strictly.
+				if (!o.apiKey && Array.isArray(body.data)) {
+					const ids = body.data.map((m) => m.id);
+					if (!ids.some((id) => id === o.model || id.startsWith(`${o.model}:`)))
+						return `model "${o.model}" is not pulled: the runner lists ${ids.length ? ids.slice(0, 5).join(', ') : 'no models'}`;
+				}
 				return null;
 			} catch (e) {
 				return `no model runner at ${o.url}: ${(e as Error).message}`;

@@ -133,6 +133,9 @@ export function fakeLlm(): Llm & { prompts: Message[][] } {
 		async check() {
 			return null;
 		},
+		async pull() {
+			return null;
+		},
 		async chat(messages, tools: LlmTool[]) {
 			prompts.push(messages);
 			const last = messages[messages.length - 1];

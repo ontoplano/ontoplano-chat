@@ -65,6 +65,8 @@ export type Checks = {
 	app(url: string, token: string): Promise<{ tools: number } | { problem: string }>;
 	/** Is the model reachable: null, or a problem. */
 	llm(url: string, model: string, apiKey: string): Promise<string | null>;
+	/** Ask the runner to download the model: null when it did. */
+	llmPull(url: string, model: string, apiKey: string): Promise<string | null>;
 	/** Is a command on the PATH. */
 	has(command: string): boolean;
 	/** Run a shell line with the terminal attached; answers whether it succeeded. */
@@ -255,12 +257,12 @@ async function stepModel(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 				problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
 			}
 		}
-		if (problem && checks.has('ollama') && /not among/.test(problem)) {
-			ask.say(`   ✗ ${problem}`);
-			if (await ask.yes(`   Pull it now? (ollama pull ${c.llm.model})`, true)) {
-				await checks.run(`ollama pull ${c.llm.model}`);
-				problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
-			}
+	}
+	if (problem && /not pulled/.test(problem)) {
+		ask.say(`   ✗ ${problem}`);
+		if (await ask.yes(`   Pull ${c.llm.model} now? (a few GB; several minutes)`, true)) {
+			const pulled = await checks.llmPull(c.llm.url, c.llm.model, c.llm.apiKey);
+			problem = pulled ?? (await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey));
 		}
 	}
 	ask.say(problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : '   ✓ the model answers');

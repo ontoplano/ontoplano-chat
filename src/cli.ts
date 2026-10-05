@@ -42,7 +42,7 @@ const HELP = `ontoplano-chat ${VERSION} — a local voice assistant for ontoplan
   ontoplano-chat devices    the paired devices
   ontoplano-chat revoke <name>
   ontoplano-chat doctor     check the model, the ears, the voice and the app
-  ontoplano-chat models     download the speech models the config names onto the local speech server
+  ontoplano-chat models     pull the model, and the speech models, the config names onto the local servers
   ontoplano-chat config     write ~/.config/ontoplano-chat/config.toml if there is none
   ontoplano-chat version
 `;
@@ -208,8 +208,8 @@ async function doctor(): Promise<number> {
 		`model ${engines.llm.model} at ${c.llm.url}`,
 		llmProblem,
 		c.llm.url.includes('11434')
-			? llmProblem && /not among/.test(llmProblem)
-				? `ollama pull ${engines.llm.model}`
+			? llmProblem && /not pulled/.test(llmProblem)
+				? `pull it: ontoplano-chat models — or: ollama pull ${engines.llm.model}`
 				: has('ollama')
 					? `is Ollama running? systemctl status ollama — or: ollama serve`
 					: `install it: ${OLLAMA_INSTALL} — then: ollama pull ${engines.llm.model}`
@@ -261,9 +261,19 @@ async function pullModels(): Promise<number> {
 	const wanted: { what: string; url: string; model: string }[] = [];
 	if (c.stt.kind === 'openai' && !c.stt.apiKey) wanted.push({ what: 'ears', url: c.stt.url, model: c.stt.model });
 	if (c.tts.kind === 'openai' && !c.tts.apiKey) wanted.push({ what: 'voice', url: c.tts.url, model: c.tts.model });
-	if (!wanted.length) {
-		out('nothing to download: no local speech server in the config');
-		return 0;
+
+	// The model itself first, when the runner can pull it (Ollama can).
+	const llm = buildEngines(c).llm;
+	const llmProblem = await llm.check();
+	if (!llmProblem) out(`  ✓ model: ${llm.model} is on ${c.llm.url}`);
+	else if (/not pulled/.test(llmProblem)) {
+		out(`  → model: pulling ${llm.model} on ${c.llm.url} (a few GB; several minutes)…`);
+		const problem = (await llm.pull()) ?? (await llm.check());
+		out(problem ? `  ✗ model: ${problem}` : `  ✓ model: ${llm.model} is on ${c.llm.url}`);
+		if (problem) bad++;
+	} else {
+		out(`  ✗ model: ${llmProblem}`);
+		bad++;
 	}
 	for (const w of wanted) {
 		const already = await speechServerCheck(w.url, w.model, undefined);
@@ -382,6 +392,7 @@ async function setup(step?: string): Promise<number> {
 			}
 		},
 		llm: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).check(),
+		llmPull: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).pull(),
 		speech: (url, model, apiKey) => speechServerCheck(url, model, apiKey || undefined),
 		pull: (url, model, apiKey) => speechServerPull(url, model, apiKey || undefined),
 		has,

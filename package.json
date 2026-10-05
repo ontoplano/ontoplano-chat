@@ -1,6 +1,6 @@
 {
 	"name": "ontoplano-chat",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"private": true,
 	"description": "A local voice assistant that acts on ontoplano: a phone talks, a model on your own computer listens, answers and does.",
 	"type": "module",
