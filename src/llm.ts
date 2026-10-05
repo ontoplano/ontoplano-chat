@@ -29,6 +29,22 @@ export type Llm = {
 
 export class LlmError extends Error {}
 
+/** How long the one-token probe may take: a cold model loads first. */
+const PROBE_TIMEOUT_MS = 120 * 1000;
+
+/** The message out of an error body, when it is the usual JSON; else the first line of it. */
+function firstLine(text: string): string {
+	try {
+		const parsed = JSON.parse(text) as { error?: { message?: string } | string };
+		const e = parsed.error;
+		if (typeof e === 'string') return e;
+		if (e && typeof e.message === 'string') return e.message;
+	} catch {
+		// not JSON
+	}
+	return text.split('\n')[0]?.slice(0, 200) ?? '';
+}
+
 export type LlmOptions = {
 	url: string;
 	model: string;
@@ -117,9 +133,28 @@ export function openAiLlm(o: LlmOptions): Llm {
 					if (!ids.some((id) => id === o.model || id.startsWith(`${o.model}:`)))
 						return `model "${o.model}" is not pulled: the runner lists ${ids.length ? ids.slice(0, 5).join(', ') : 'no models'}`;
 				}
-				return null;
 			} catch (e) {
 				return `no model runner at ${o.url}: ${(e as Error).message}`;
+			}
+			// The list is what the runner says; a one-token completion is what a
+			// turn does. Only the second is the truth, so it is asked too.
+			try {
+				const res = await fetchImpl(`${o.url}/chat/completions`, {
+					method: 'POST',
+					headers,
+					signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+					body: JSON.stringify({
+						model: o.model,
+						messages: [{ role: 'user', content: 'hi' }],
+						max_tokens: 1,
+						stream: false
+					})
+				});
+				if (res.status === 404) return `model "${o.model}" is not pulled: ${firstLine(await res.text())}`;
+				if (!res.ok) return `the model answered ${res.status} to a one-word question: ${firstLine(await res.text())}`;
+				return null;
+			} catch (e) {
+				return `the model did not answer a one-word question: ${(e as Error).message}`;
 			}
 		}
 	};

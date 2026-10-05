@@ -37,6 +37,7 @@ setup: build
 build: link
 	@[ -d node_modules ] || yarn install --frozen-lockfile
 	@yarn -s build
+	@echo "built ontoplano-chat $$(node bin/ontoplano-chat.mjs version) — $$(git log -1 --format=%h) — ~/.local/bin/ontoplano-chat"
 
 ## the command on your PATH: ~/.local/bin/ontoplano-chat → this checkout
 link:

@@ -17,6 +17,15 @@ beforeAll(async () => {
 				res.writeHead(200, { 'Content-Type': 'application/json' });
 				return res.end(JSON.stringify({ data: [...pulled].map((id) => ({ id })) }));
 			}
+			if (req.url === '/v1/chat/completions') {
+				const model = (JSON.parse(body) as { model: string }).model;
+				if (![...pulled].some((id) => id === model || id.startsWith(`${model}:`))) {
+					res.writeHead(404, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: { message: `model '${model}' not found`, type: 'not_found_error' } }));
+				}
+				res.writeHead(200, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ choices: [{ message: { content: 'hi' } }] }));
+			}
 			if (req.url === '/api/pull') {
 				pulled.add((JSON.parse(body) as { model: string }).model);
 				res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -42,6 +51,20 @@ describe('the runner', () => {
 	it('a tag counts as the model', async () => {
 		pulled.add('llama3.1:8b');
 		expect(await openAiLlm({ url, model: 'llama3.1', timeoutMs: 5000 }).check()).toBeNull();
+	});
+
+	it('is not fooled by a list that names the model when a completion still 404s', async () => {
+		// A runner whose list and whose chat disagree: the list says yes, the turn says no.
+		const listed = openAiLlm({
+			url,
+			model: 'ghost',
+			timeoutMs: 5000,
+			fetchImpl: async (input, init) => {
+				if (String(input).endsWith('/v1/models')) return Response.json({ data: [{ id: 'ghost' }] });
+				return fetch(input, init);
+			}
+		});
+		expect(await listed.check()).toMatch(/not pulled: model 'ghost' not found/);
 	});
 
 	it('a runner that is not there is said so', async () => {
