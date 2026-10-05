@@ -15,6 +15,14 @@ beforeAll(async () => {
 			res.writeHead(200, { 'Content-Type': 'application/json' });
 			return res.end(JSON.stringify({ data: [...installed].map((id) => ({ id })) }));
 		}
+		if (path === '/v1/audio/transcriptions' && req.method === 'POST') {
+			res.writeHead(200, { 'Content-Type': 'application/json' });
+			return res.end(JSON.stringify({ text: '' }));
+		}
+		if (path === '/v1/audio/speech' && req.method === 'POST') {
+			res.writeHead(404, { 'Content-Type': 'text/plain' });
+			return res.end('404: Not Found');
+		}
 		if (path.startsWith('/v1/models/') && req.method === 'POST') {
 			installed.add(decodeURIComponent(path.slice('/v1/models/'.length)));
 			res.writeHead(201);
@@ -54,6 +62,21 @@ describe('a local speech server', () => {
 		expect(voice.about).toBe(`af_heart at ${url} (an OpenAI-compatible server)`);
 		expect(httpStt({ kind: 'whispercpp', url, path: '/inference', model: '', language: 'pt' }).about).toBe(
 			`whisper.cpp at ${url}`
+		);
+	});
+
+	it('the ears are checked with a moment of silence, the voice with a word', async () => {
+		const ears = httpStt({
+			kind: 'openai',
+			url,
+			path: '/v1/audio/transcriptions',
+			model: 'Systran/faster-whisper-small',
+			language: 'pt'
+		});
+		expect(await ears.check()).toBeNull();
+		const voice = openAiTts({ url, model: 'speaches-ai/Kokoro-82M-v1.0-ONNX', voice: 'af_heart' });
+		expect(await voice.check()).toMatch(
+			/answered 404 — Not Found to POST \/v1\/audio\/speech — is that a server with a voice/
 		);
 	});
 

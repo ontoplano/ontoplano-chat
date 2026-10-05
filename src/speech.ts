@@ -30,6 +30,27 @@ export type Tts = {
 
 export class SpeechError extends Error {}
 
+/** What the checks send: a moment of silence to the ears, one word to the voice. */
+const PROBE_SILENCE_MS = 300;
+const PROBE_WORD = 'oi';
+
+/** The message out of an error body when it is the usual JSON, else the first line — never "404: 404: Not Found". */
+function saidBy(status: number, text: string): string {
+	let message = text.split('\n')[0]?.slice(0, 200) ?? '';
+	try {
+		const parsed = JSON.parse(text) as { detail?: unknown; error?: { message?: string } | string; message?: string };
+		const d = parsed.detail;
+		if (typeof d === 'string') message = d;
+		else if (typeof parsed.error === 'string') message = parsed.error;
+		else if (parsed.error && typeof parsed.error.message === 'string') message = parsed.error.message;
+		else if (typeof parsed.message === 'string') message = parsed.message;
+	} catch {
+		// not JSON
+	}
+	message = message.replace(new RegExp(`^${status}:?\\s*`), '');
+	return message ? `${status} — ${message}` : String(status);
+}
+
 const bearer = (apiKey?: string): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
 
 /** The models an OpenAI-compatible server lists, or null when it does not list any (a cloud, or not that kind of server). */
@@ -132,7 +153,10 @@ export function httpStt(o: SttOptions): Stt {
 			} catch (e) {
 				throw new SpeechError(`no transcriber at ${o.url}: ${(e as Error).message}`);
 			}
-			if (!res.ok) throw new SpeechError(`the transcriber answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+			if (!res.ok)
+				throw new SpeechError(
+					`the transcriber at ${o.url} answered ${saidBy(res.status, await res.text())}${res.status === 404 ? ` to POST ${o.path} — is that a Speaches / whisper server?` : ''}`
+				);
 			const body = (await res.json()) as { text?: string };
 			return (body.text ?? '').trim();
 		},
@@ -145,7 +169,16 @@ export function httpStt(o: SttOptions): Stt {
 					return `no transcriber at ${o.url}: ${(e as Error).message}`;
 				}
 			}
-			return speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
+			const listed = await speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
+			if (listed) return listed;
+			// The listing is what the server says; a transcription is what a turn
+			// does. A moment of silence is enough to find out.
+			try {
+				await this.transcribe(silentWav(PROBE_SILENCE_MS), 'audio/wav');
+				return null;
+			} catch (e) {
+				return (e as Error).message;
+			}
 		}
 	};
 }
@@ -187,12 +220,23 @@ export function openAiTts(o: OpenAiTtsOptions): Tts {
 			} catch (e) {
 				throw new SpeechError(`no voice at ${o.url}: ${(e as Error).message}`);
 			}
-			if (!res.ok) throw new SpeechError(`the voice answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+			if (!res.ok)
+				throw new SpeechError(
+					`the voice at ${o.url} answered ${saidBy(res.status, await res.text())}${res.status === 404 ? ' to POST /v1/audio/speech — is that a server with a voice (Speaches with TTS, Kokoro-FastAPI)?' : ''}`
+				);
 			const mime = res.headers.get('content-type')?.split(';')[0] || 'audio/mpeg';
 			return { mime, bytes: new Uint8Array(await res.arrayBuffer()) };
 		},
 		async check() {
-			return speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
+			const listed = await speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
+			if (listed) return listed;
+			// And one word spoken, which is what a turn asks for.
+			try {
+				await this.speak(PROBE_WORD);
+				return null;
+			} catch (e) {
+				return (e as Error).message;
+			}
 		}
 	};
 }
@@ -236,4 +280,26 @@ export function piperTts(o: PiperOptions): Tts {
 			});
 		}
 	};
+}
+
+/** A WAV of silence, `ms` long, 8kHz mono 16-bit. */
+export function silentWav(ms: number): Uint8Array {
+	const rate = 8000;
+	const samples = Math.round((rate * ms) / 1000);
+	const data = samples * 2;
+	const buf = Buffer.alloc(44 + data);
+	buf.write('RIFF', 0);
+	buf.writeUInt32LE(36 + data, 4);
+	buf.write('WAVE', 8);
+	buf.write('fmt ', 12);
+	buf.writeUInt32LE(16, 16);
+	buf.writeUInt16LE(1, 20);
+	buf.writeUInt16LE(1, 22);
+	buf.writeUInt32LE(rate, 24);
+	buf.writeUInt32LE(rate * 2, 28);
+	buf.writeUInt16LE(2, 32);
+	buf.writeUInt16LE(16, 34);
+	buf.write('data', 36);
+	buf.writeUInt32LE(data, 40);
+	return new Uint8Array(buf);
 }

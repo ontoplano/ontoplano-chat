@@ -344,7 +344,9 @@ function handle(event, turn, meBubble) {
 		case 'error': {
 			// Nothing was heard: the waiting "…" has nothing to become.
 			if (meBubble && meBubble.textContent === '…') meBubble.parentElement.remove();
-			const bubble = turn.bubble.isConnected ? turn.bubble : document.createElement('div');
+			// A reply already drawn stays; the error goes under it, never over it.
+			const replied = turn.bubble.isConnected && !turn.bubble.classList.contains('thinking');
+			const bubble = turn.bubble.isConnected && !replied ? turn.bubble : document.createElement('div');
 			bubble.className = 'bubble error';
 			bubble.textContent = errorText(event.message);
 			if (!bubble.isConnected) turn.li.appendChild(bubble);
