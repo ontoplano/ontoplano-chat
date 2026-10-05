@@ -119,10 +119,11 @@ const call = (name: string, args: Record<string, unknown>): Reply => {
 	return {
 		content: '',
 		toolCalls: [{ id, name, args }],
-		raw: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }]
+		raw: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }],
+		thinking: ''
 	};
 };
-const say = (content: string): Reply => ({ content, toolCalls: [], raw: [] });
+const say = (content: string): Reply => ({ content, toolCalls: [], raw: [], thinking: '' });
 
 /** A model that understands a few sentence shapes, in English and Portuguese. */
 export function fakeLlm(): Llm & { prompts: Message[][] } {

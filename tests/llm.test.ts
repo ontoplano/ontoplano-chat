@@ -73,3 +73,28 @@ describe('the runner', () => {
 		);
 	});
 });
+
+describe('a thinking model', () => {
+	it('keeps its thinking out of the answer', async () => {
+		const llm = openAiLlm({
+			url: 'http://x/v1',
+			model: 'm',
+			timeoutMs: 5000,
+			fetchImpl: async () =>
+				Response.json({ choices: [{ message: { content: '<think>they greet me</think>Oi! Tudo bem.' } }] })
+		});
+		const reply = await llm.chat([{ role: 'user', content: 'oi' }], []);
+		expect(reply.content).toBe('Oi! Tudo bem.');
+		expect(reply.thinking).toBe('they greet me');
+	});
+
+	it('reads the reasoning field too', async () => {
+		const llm = openAiLlm({
+			url: 'http://x/v1',
+			model: 'm',
+			timeoutMs: 5000,
+			fetchImpl: async () => Response.json({ choices: [{ message: { content: 'Oi.', reasoning: 'a greeting' } }] })
+		});
+		expect((await llm.chat([{ role: 'user', content: 'oi' }], [])).thinking).toBe('a greeting');
+	});
+});

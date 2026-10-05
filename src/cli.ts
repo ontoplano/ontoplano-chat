@@ -22,7 +22,7 @@ import { ensureSpeaches, ensureStack, type Shell } from './stack.js';
 import { renderConfig, runWizard, STEPS, type Checks, type Choices, type Step } from './wizard.js';
 
 import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } from './config.js';
-import { OLLAMA_INSTALL, PROVIDERS, SPEACHES_RUN } from './constants.js';
+import { kokoroLanguageOf, kokoroVoiceFor, OLLAMA_INSTALL, PROVIDERS, SPEACHES_RUN } from './constants.js';
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
 import { Devices } from './pairing.js';
@@ -89,7 +89,8 @@ async function serve(): Promise<number> {
 		tts: engines.tts,
 		mcp: engines.mcp,
 		tools: () => engines.tools.current(),
-		history
+		history,
+		log: stamp
 	});
 	engines.tools.start();
 	const server = createHttpServer({ config: c, devices, assistant, history, engines, version: VERSION, log: stamp });
@@ -229,15 +230,22 @@ async function doctor(): Promise<number> {
 					? "is whisper.cpp's server running on that port? `ontoplano-chat setup ears` changes it"
 					: 'check the address and the key: `ontoplano-chat setup ears`'
 	);
-	const ttsProblem = await engines.tts.check();
+	const speaks = c.tts.kind === 'openai' ? kokoroLanguageOf(c.tts.voice) : null;
+	const wants = c.assistant.language.toLowerCase().split(/[-_]/)[0];
+	const ttsProblem =
+		speaks && speaks !== wants
+			? `the voice ${c.tts.voice} speaks ${speaks}, and the assistant answers in ${c.assistant.language}`
+			: await engines.tts.check();
 	tell(
 		`voice: ${engines.tts.about}`,
 		ttsProblem,
-		ttsProblem && /not installed/.test(ttsProblem)
-			? 'download it: `ontoplano-chat models` — or `ontoplano-chat setup voice`'
-			: engines.tts.kind === 'piper'
-				? 'piper is not on the PATH: https://github.com/rhasspy/piper — or `ontoplano-chat setup voice`'
-				: 'nothing answers there: `ontoplano-chat setup voice` changes it'
+		ttsProblem && /speaks/.test(ttsProblem)
+			? `a ${c.assistant.language} voice: ontoplano-chat setup voice (it offers ${kokoroVoiceFor(c.assistant.language)})`
+			: ttsProblem && /not installed/.test(ttsProblem)
+				? 'download it: `ontoplano-chat models` — or `ontoplano-chat setup voice`'
+				: engines.tts.kind === 'piper'
+					? 'piper is not on the PATH: https://github.com/rhasspy/piper — or `ontoplano-chat setup voice`'
+					: 'nothing answers there: `ontoplano-chat setup voice` changes it'
 	);
 	if (c.ontoplano.token) {
 		const loaded = await engines.tools.load();

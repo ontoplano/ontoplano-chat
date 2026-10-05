@@ -157,7 +157,7 @@ describe('one step alone', () => {
 			kind: 'openai' as const,
 			url: 'http://127.0.0.1:8888',
 			model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
-			voice: 'af_heart',
+			voice: 'pf_dora',
 			apiKey: '',
 			piperModel: ''
 		},
@@ -265,6 +265,43 @@ describe('a Speaches that is not there', () => {
 		const choices = await runWizard(scriptedAsk(['3', '', '', '', 'n']), c, 'voice');
 		expect(started).toBe('speaches-voice@http://127.0.0.1:7748');
 		expect(choices.tts.url).toBe('http://127.0.0.1:7748');
+	});
+});
+
+describe('the voice follows the language', () => {
+	it('an English Kokoro voice is not offered back to a Portuguese assistant', async () => {
+		const current = {
+			token: 'kept',
+			language: 'pt-BR',
+			stt: { kind: 'openai' as const, url: 'http://127.0.0.1:7749', model: 'w', language: 'pt', apiKey: '' },
+			tts: {
+				kind: 'openai' as const,
+				url: 'http://127.0.0.1:7749',
+				model: 'k',
+				voice: 'bm_lewis',
+				apiKey: '',
+				piperModel: ''
+			}
+		};
+		const choices = await runWizard(scriptedAsk(['3', '', '', '']), checks({ current }), 'voice');
+		expect(choices.tts.voice).toBe('pf_dora');
+	});
+
+	it('changing the language moves the voice with it', async () => {
+		const current = {
+			token: 'kept',
+			language: 'en',
+			tts: {
+				kind: 'openai' as const,
+				url: 'http://127.0.0.1:7749',
+				model: 'k',
+				voice: 'af_heart',
+				apiKey: '',
+				piperModel: ''
+			}
+		};
+		const choices = await runWizard(scriptedAsk(['', 'pt-BR']), checks({ current }), 'assistant');
+		expect(choices.tts.voice).toBe('pf_dora');
 	});
 });
 

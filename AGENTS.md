@@ -88,6 +88,16 @@ e2e/               Playwright — the page, at phone and desktop width
   (`src/stack.ts`), which `setup` and `make install-service` run. Nothing —
   not doctor, not the wizard, not a reply — hands the person a `docker run`
   or an `ollama pull` to type; a thing that is missing and can be had is had.
+- **The token is the fence; the tool list only orders.** `assistant.tools`
+  defaults to the everyday ones first and then `*`. A key confined to one
+  notebook grants a different set than any fixed list names, and a fixed
+  list silently hid the notebook tools from the model.
+- **Every step of a turn is in the journal** — heard, each model round with
+  its duration and thinking, each tool and its answer. A turn that hangs on
+  "…" must be explainable from `journalctl --user -u ontoplano-chat`.
+- **The voice speaks the assistant's language.** Kokoro's first letter is its
+  language; the default follows `assistant.language` and doctor fails a
+  mismatch.
 - **The data directory is private**: files are written `0600` through
   `writePrivate()`, the directory `0700`. Keep it so.
 

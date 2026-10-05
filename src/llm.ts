@@ -15,7 +15,7 @@ export type Message =
 
 type RawToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 
-export type Reply = { content: string; toolCalls: ToolCall[]; raw: RawToolCall[] };
+export type Reply = { content: string; toolCalls: ToolCall[]; raw: RawToolCall[]; thinking: string };
 
 export type Llm = {
 	/** One completion. With tool calls, `content` is usually empty. */
@@ -87,7 +87,14 @@ export function openAiLlm(o: LlmOptions): Llm {
 			}
 			if (!res.ok) throw new LlmError(`the model answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
 			const body = (await res.json()) as {
-				choices?: { message?: { content?: string | null; tool_calls?: RawToolCall[] } }[];
+				choices?: {
+					message?: {
+						content?: string | null;
+						tool_calls?: RawToolCall[];
+						reasoning?: string;
+						reasoning_content?: string;
+					};
+				}[];
 			};
 			const message = body.choices?.[0]?.message;
 			if (!message) throw new LlmError('the model answered with no choices');
@@ -96,8 +103,17 @@ export function openAiLlm(o: LlmOptions): Llm {
 				type: 'function' as const,
 				function: { name: c.function.name, arguments: c.function.arguments ?? '{}' }
 			}));
+			// A thinking model writes its reasoning either beside the answer or inside
+			// it between <think> tags; either way it is the log's, not the voice's.
+			let content = message.content ?? '';
+			let thinking = message.reasoning ?? message.reasoning_content ?? '';
+			content = content.replace(/<think>([\s\S]*?)<\/think>/g, (_m, t: string) => {
+				thinking += t;
+				return '';
+			});
 			return {
-				content: (message.content ?? '').trim(),
+				content: content.trim(),
+				thinking: thinking.trim(),
 				raw,
 				toolCalls: raw.map((c) => ({ id: c.id, name: c.function.name, args: parseArgs(c.function.arguments) }))
 			};

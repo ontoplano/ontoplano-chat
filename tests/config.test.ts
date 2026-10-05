@@ -10,7 +10,7 @@ describe('config', () => {
 		const c = fromToml('', env);
 		expect(c.server.port).toBe(DEFAULT_PORT);
 		expect(c.server.host).toBe('127.0.0.1');
-		expect(c.assistant.tools).toEqual(DEFAULT_TOOLS);
+		expect(c.assistant.tools).toEqual([...DEFAULT_TOOLS, '*']);
 		expect(c.tts.kind).toBe('browser');
 	});
 
@@ -61,7 +61,7 @@ describe('config', () => {
 	it('the example config parses to the defaults', () => {
 		const c = fromToml(exampleConfig(), env);
 		expect(c.server.port).toBe(DEFAULT_PORT);
-		expect(c.assistant.tools).toEqual(DEFAULT_TOOLS);
+		expect(c.assistant.tools).toEqual([...DEFAULT_TOOLS, '*']);
 	});
 });
 
@@ -89,5 +89,32 @@ describe('serving', () => {
 
 	it('an empty token is named', () => {
 		expect(checkForServing(fromToml('', env)).join(' ')).toMatch(/ontoplano.token is empty/);
+	});
+});
+
+describe('the defaults that follow the person', () => {
+	it('offers every granted tool after the everyday ones', async () => {
+		const { offeredTools } = await import('../src/mcp.js');
+		const c = fromToml('', env);
+		const granted = ['write_entry', 'notebook_notes', 'some_rare_tool', 'today'].map((name) => ({
+			name,
+			description: '',
+			inputSchema: { type: 'object', properties: {} }
+		}));
+		expect(offeredTools(granted, c.assistant.tools, 100).map((t) => t.name)).toEqual([
+			'today',
+			'notebook_notes',
+			'write_entry',
+			'some_rare_tool'
+		]);
+	});
+
+	it('a Kokoro voice is picked for the language, and its language read from its name', async () => {
+		const { kokoroLanguageOf, kokoroVoiceFor } = await import('../src/constants.js');
+		expect(kokoroVoiceFor('pt-BR')).toBe('pf_dora');
+		expect(kokoroVoiceFor('en')).toBe('af_heart');
+		expect(kokoroLanguageOf('bm_lewis')).toBe('en');
+		expect(kokoroLanguageOf('pm_alex')).toBe('pt');
+		expect(kokoroLanguageOf('alloy')).toBeNull();
 	});
 });

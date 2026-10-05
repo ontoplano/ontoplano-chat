@@ -25,7 +25,8 @@ import {
 	OPENAI_TTS_VOICE,
 	PROVIDERS,
 	SPEACHES_TTS_MODEL,
-	SPEACHES_TTS_VOICE,
+	kokoroLanguageOf,
+	kokoroVoiceFor,
 	SPEACHES_URL,
 	VOICES,
 	type Provider
@@ -412,7 +413,12 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 		const remembered = was === 'speaches' && cur.tts?.url ? cur.tts.url : speachesSoFar(c, cur);
 		tts.url = normalizeUrl(await ask.text('   Speaches URL', remembered));
 		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
-		tts.voice = await ask.text('   Voice', (was === 'speaches' && cur.tts?.voice) || SPEACHES_TTS_VOICE);
+		const kept = was === 'speaches' ? cur.tts?.voice : undefined;
+		const keptSpeaks = kept ? kokoroLanguageOf(kept) : null;
+		const want = c.language.toLowerCase().split(/[-_]/)[0];
+		// A kept voice in another language is not offered back: that is how it came to speak English.
+		const voiceDefault = kept && (!keptSpeaks || keptSpeaks === want) ? kept : kokoroVoiceFor(c.language);
+		tts.voice = await ask.text(`   Voice (Kokoro's for ${c.language}: ${kokoroVoiceFor(c.language)})`, voiceDefault);
 		const other = c.stt.kind === 'openai' && !c.stt.apiKey ? c.stt.url : undefined;
 		tts.url = await speechReady(ask, checks, tts.url, tts.model, '', { other, name: 'speaches-voice' });
 	} else if (voice === 'cloud') {
@@ -436,6 +442,12 @@ async function stepAssistant(ask: Ask, c: Choices, n: string): Promise<void> {
 	c.name = await ask.text('   Its name', c.name);
 	c.language = await ask.text('   The language it answers in (a tag: pt-BR, en, es…)', c.language);
 	c.stt.language = sttLanguage(c.language);
+	const speaks = c.tts.kind === 'openai' ? kokoroLanguageOf(c.tts.voice) : null;
+	if (speaks && speaks !== c.stt.language) {
+		const next = kokoroVoiceFor(c.language);
+		ask.say(`   the voice ${c.tts.voice} speaks ${speaks}; it becomes ${next}, which speaks ${c.stt.language}`);
+		c.tts.voice = next;
+	}
 }
 
 async function stepReach(ask: Ask, checks: Checks, c: Choices, n: string): Promise<void> {

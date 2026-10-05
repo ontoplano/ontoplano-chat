@@ -59,6 +59,8 @@ export type AssistantOptions = {
 	tools: () => readonly McpTool[];
 	history: History;
 	now?: () => Date;
+	/** One line per step of a turn — what was heard, each model call, its thinking, each tool and how it went. */
+	log?: (line: string) => void;
 };
 
 type Pending = {
@@ -81,8 +83,11 @@ export class Assistant {
 	private readonly conversations = new Map<string, Conversation>();
 	private readonly now: () => Date;
 
+	private readonly log: (line: string) => void;
+
 	constructor(private readonly o: AssistantOptions) {
 		this.now = o.now ?? (() => new Date());
+		this.log = o.log ?? (() => {});
 	}
 
 	private conversation(device: string): Conversation {
@@ -146,6 +151,7 @@ export class Assistant {
 					return;
 				}
 			}
+			this.log(`[${device}] heard: ${heard}`);
 			if (!heard) {
 				emit({ type: 'error', message: 'nothing-said' });
 				emit({ type: 'done' });
@@ -232,7 +238,17 @@ export class Assistant {
 		for (let r = round; r <= this.o.maxToolRounds; r++) {
 			emit({ type: 'thinking' });
 			const final = r === this.o.maxToolRounds;
-			const reply = await this.o.llm.chat(messages, final ? [] : this.llmTools());
+			const tools = final ? [] : this.llmTools();
+			const started = Date.now();
+			this.log(`[${device}] model: round ${r + 1}, ${tools.length} tools, ${messages.length} messages`);
+			const reply = await this.o.llm.chat(messages, tools);
+			const took = ((Date.now() - started) / 1000).toFixed(1);
+			if (reply.thinking) this.log(`[${device}] thinking (${took}s): ${oneLine(reply.thinking, LOG_THINKING_CHARS)}`);
+			if (reply.toolCalls.length)
+				this.log(
+					`[${device}] model wants (${took}s): ${reply.toolCalls.map((t) => `${t.name}(${oneLine(JSON.stringify(t.args), LOG_ARGS_CHARS)})`).join(', ')}`
+				);
+			else this.log(`[${device}] model says (${took}s): ${oneLine(reply.content, LOG_REPLY_CHARS)}`);
 			if (reply.toolCalls.length && !final) {
 				messages.push({ role: 'assistant', content: reply.content || null, tool_calls: reply.raw });
 				const stopped = await this.runCalls(device, c, reply.toolCalls, messages, r, actions, heard, emit);
@@ -306,6 +322,7 @@ export class Assistant {
 				result = { ok: false, text: (e as Error).message, structured: undefined };
 			}
 		}
+		this.log(`  ${result.ok ? '✓' : '✗'} ${call.name}: ${oneLine(result.text, LOG_RESULT_CHARS)}`);
 		const receipt = describeAction(this.o.appUrl, call.name, call.args, result);
 		emit({
 			type: 'action',
@@ -348,6 +365,15 @@ export class Assistant {
 }
 
 /** "sim", "no", "go ahead": a bare answer in the assistant's language, or null when something else was said. */
+const LOG_THINKING_CHARS = 600;
+const LOG_ARGS_CHARS = 200;
+const LOG_REPLY_CHARS = 300;
+const LOG_RESULT_CHARS = 200;
+const oneLine = (t: string, n: number): string => {
+	const flat = t.replace(/\s+/g, ' ').trim();
+	return flat.length > n ? flat.slice(0, n) + '…' : flat;
+};
+
 export function yesOrNo(text: string, language: string): boolean | null {
 	const key = LANGUAGE_KEY(language);
 	const flat = text

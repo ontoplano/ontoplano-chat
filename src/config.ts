@@ -149,7 +149,10 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 		assistant: {
 			name: 'Onto',
 			language: 'pt-BR',
-			tools: [...DEFAULT_TOOLS],
+			// The everyday ones first, then everything else the token grants: the token
+			// is the fence the person chose, and a key confined to one notebook grants
+			// a different set than the everyday list names.
+			tools: [...DEFAULT_TOOLS, '*'],
 			confirm: [...DEFAULT_CONFIRM],
 			historyTurns: DEFAULT_HISTORY_TURNS
 		},
@@ -367,8 +370,9 @@ name = "Onto"
 language = "pt-BR"
 # Which of the app's tools the model is offered. A small local model holds a
 # few dozen well; the app has two hundred. ["*"] offers every tool the token
-# grants. A name may carry a * wildcard.
-tools = ${JSON.stringify(DEFAULT_TOOLS, null, 2).replace(/\n/g, '\n')}
+# grants; the default is the everyday ones first and then "*", everything
+# else the token grants. A name may carry a * wildcard.
+tools = ${JSON.stringify([...DEFAULT_TOOLS, '*'], null, 2)}
 # Tools that ask "are you sure?" before running.
 confirm = ${JSON.stringify(DEFAULT_CONFIRM)}
 # How many past turns the model is reminded of.

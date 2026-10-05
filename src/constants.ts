@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.10' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.11' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;
@@ -256,3 +256,32 @@ export const OPENAI_TTS_MODEL = 'tts-1';
 export const OPENAI_TTS_VOICE = 'alloy';
 export const SPEACHES_TTS_MODEL = 'speaches-ai/Kokoro-82M-v1.0-ONNX';
 export const SPEACHES_TTS_VOICE = 'af_heart';
+
+/**
+ * Kokoro's voices say their language in their first letter. A voice whose
+ * letter is not the assistant's language reads Portuguese with an English
+ * mouth — the default follows the language, and doctor says when they part.
+ */
+export const KOKORO_LANGUAGES: Record<string, { lang: string; voice: string }> = {
+	a: { lang: 'en', voice: 'af_heart' },
+	b: { lang: 'en', voice: 'bf_emma' },
+	e: { lang: 'es', voice: 'ef_dora' },
+	f: { lang: 'fr', voice: 'ff_siwis' },
+	h: { lang: 'hi', voice: 'hf_alpha' },
+	i: { lang: 'it', voice: 'if_sara' },
+	j: { lang: 'ja', voice: 'jf_alpha' },
+	p: { lang: 'pt', voice: 'pf_dora' },
+	z: { lang: 'zh', voice: 'zf_xiaobei' }
+};
+
+/** The Kokoro voice for a language tag (pt-BR → pf_dora), or the English default. */
+export function kokoroVoiceFor(language: string): string {
+	const key = language.toLowerCase().split(/[-_]/)[0];
+	return Object.values(KOKORO_LANGUAGES).find((v) => v.lang === key)?.voice ?? SPEACHES_TTS_VOICE;
+}
+
+/** The language a Kokoro voice speaks, from its name, or null when it is not one. */
+export function kokoroLanguageOf(voice: string): string | null {
+	const m = voice.match(/^([a-z])[fm]_/);
+	return m ? (KOKORO_LANGUAGES[m[1] as string]?.lang ?? null) : null;
+}
