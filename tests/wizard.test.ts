@@ -218,6 +218,55 @@ describe('a runner that has other models', () => {
 	});
 });
 
+describe('a Speaches that is not there', () => {
+	const current = {
+		token: 'kept',
+		provider: 'ollama',
+		llm: { url: 'http://127.0.0.1:11434/v1', model: 'qwen3.5:9b', apiKey: '' },
+		stt: {
+			kind: 'openai' as const,
+			url: 'http://127.0.0.1:7749',
+			model: 'Systran/faster-whisper-small',
+			language: 'pt',
+			apiKey: ''
+		},
+		tts: {
+			kind: 'openai' as const,
+			url: 'http://127.0.0.1:7748',
+			model: 'speaches-ai/Kokoro-82M-v1.0-ONNX',
+			voice: 'bm_lewis',
+			apiKey: '',
+			piperModel: ''
+		}
+	};
+
+	it("offers the ears' server for the voice when it answers", async () => {
+		const c = checks({
+			current,
+			speech: async (url) => (url.endsWith('7749') ? null : `nothing answers at ${url}: fetch failed`)
+		});
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', '1']), c, 'voice');
+		expect(choices.tts.url).toBe('http://127.0.0.1:7749');
+		expect(choices.stt.url).toBe('http://127.0.0.1:7749');
+	});
+
+	it('offers to start a container on that very port when docker is here', async () => {
+		let up = false;
+		const c = checks({
+			current,
+			has: (cmd) => cmd === 'docker',
+			speech: async (url) => (url.endsWith('7749') || up ? null : `nothing answers at ${url}: fetch failed`),
+			run: async (line) => {
+				up = line.includes('-p 7748:8000');
+				return up;
+			}
+		});
+		const choices = await runWizard(scriptedAsk(['3', '', '', '', '2']), c, 'voice');
+		expect(up).toBe(true);
+		expect(choices.tts.url).toBe('http://127.0.0.1:7748');
+	});
+});
+
 describe('the speech models', () => {
 	it('offers to download a model the server lacks, and checks again', async () => {
 		let has = false;

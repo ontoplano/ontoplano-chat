@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.8' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.9' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;
@@ -242,8 +242,14 @@ export const VOICES = [
 
 /** How to install Ollama, and the Speaches container, when the wizard is asked to. */
 export const OLLAMA_INSTALL = 'curl -fsSL https://ollama.com/install.sh | sh';
-export const SPEACHES_RUN =
-	'docker run -d --name speaches --restart unless-stopped -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu';
+export const SPEACHES_IMAGE = 'ghcr.io/speaches-ai/speaches:latest-cpu';
+/** The container listens on 8000 inside; `port` is the one this machine publishes. */
+export const speachesRun = (port: string | number, name = 'speaches'): string =>
+	`docker run -d --name ${name} --restart unless-stopped -p ${port}:8000 ${SPEACHES_IMAGE}`;
+export const SPEACHES_RUN = speachesRun(8000);
+/** How long a container just started is given to answer, in milliseconds, and how often it is asked. */
+export const SPEACHES_START_WAIT_MS = 30_000;
+export const SPEACHES_START_POLL_MS = Number(process.env.ONTOPLANO_CHAT_POLL_MS ?? 2_000);
 export const SPEACHES_URL = 'http://127.0.0.1:8000';
 export const OPENAI_STT_MODEL = 'whisper-1';
 export const OPENAI_TTS_MODEL = 'tts-1';

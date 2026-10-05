@@ -24,7 +24,9 @@ import {
 	OPENAI_TTS_MODEL,
 	OPENAI_TTS_VOICE,
 	PROVIDERS,
-	SPEACHES_RUN,
+	SPEACHES_START_POLL_MS,
+	SPEACHES_START_WAIT_MS,
+	speachesRun,
 	SPEACHES_TTS_MODEL,
 	SPEACHES_TTS_VOICE,
 	SPEACHES_URL,
@@ -134,9 +136,61 @@ language = ${quote(c.language)}
 
 const sttLanguage = (tag: string): string => tag.toLowerCase().split(/[-_]/)[0] ?? 'en';
 
-/** A speech server checked, and its model downloaded on request when it is the only thing missing. */
-async function speechReady(ask: Ask, checks: Checks, url: string, model: string, apiKey: string): Promise<void> {
+/** The port an address names, or the usual one. */
+const portOf = (url: string): string => {
+	try {
+		return new URL(url).port || '8000';
+	} catch {
+		return '8000';
+	}
+};
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A speech server checked, and the ways out offered when it is not there:
+ * the other half's Speaches, when it answers; a container started on this
+ * very port, when docker is here. Its model is downloaded on request when
+ * that is the only thing missing. Answers the address to keep — the other
+ * half's, when that was the pick.
+ */
+async function speechReady(
+	ask: Ask,
+	checks: Checks,
+	url: string,
+	model: string,
+	apiKey: string,
+	o: { other?: string; name: string }
+): Promise<string> {
 	let problem = await checks.speech(url, model, apiKey);
+	if (problem && /nothing answers/.test(problem) && !apiKey) {
+		ask.say(`   ✗ ${problem}`);
+		const otherUp = o.other && o.other !== url ? (await checks.speech(o.other, '', '')) === null : false;
+		const options = [
+			...(otherUp
+				? [{ key: 'other', label: `use the Speaches already answering at ${o.other} — one server does both` }]
+				: []),
+			...(checks.has('docker')
+				? [{ key: 'start', label: `start a Speaches container on this port now: ${speachesRun(portOf(url), o.name)}` }]
+				: []),
+			{ key: 'leave', label: 'leave it; `ontoplano-chat doctor` checks again later' }
+		];
+		const pick =
+			options.length > 1 ? await ask.choose('   Nothing is there yet. What now?', options, options[0]!.key) : 'leave';
+		if (pick === 'other') {
+			url = o.other as string;
+			problem = await checks.speech(url, model, apiKey);
+		} else if (pick === 'start') {
+			if (await checks.run(speachesRun(portOf(url), o.name))) {
+				ask.say('   started; waiting for it to answer…');
+				const until = Date.now() + SPEACHES_START_WAIT_MS;
+				do {
+					await sleep(SPEACHES_START_POLL_MS);
+					problem = await checks.speech(url, model, apiKey);
+				} while (problem && /nothing answers/.test(problem) && Date.now() < until);
+			}
+		}
+	}
 	if (problem && /not installed/.test(problem)) {
 		ask.say(`   ✗ ${problem}`);
 		if (await ask.yes('   Download it now? (a few hundred MB; a minute or two)', true)) {
@@ -147,6 +201,7 @@ async function speechReady(ask: Ask, checks: Checks, url: string, model: string,
 	ask.say(
 		problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : `   ✓ ${model} answers at ${url}`
 	);
+	return url;
 }
 
 /** What the config says, with a default for anything it does not: the ground every step writes over. */
@@ -321,9 +376,8 @@ async function stepEars(ask: Ask, checks: Checks, c: Choices, n: string): Promis
 		const remembered = was === 'speaches' && cur.stt?.url ? cur.stt.url : speachesSoFar(c, cur);
 		stt.url = normalizeUrl(await ask.text('   Speaches URL', remembered));
 		stt.model = await ask.text('   Whisper model', (was === 'speaches' && cur.stt?.model) || stt.model);
-		if (checks.has('docker') && (await ask.yes(`   Start the Speaches container now? (${SPEACHES_RUN})`, false)))
-			await checks.run(SPEACHES_RUN);
-		await speechReady(ask, checks, stt.url, stt.model, '');
+		const other = c.tts.kind === 'openai' && !c.tts.apiKey ? c.tts.url : undefined;
+		stt.url = await speechReady(ask, checks, stt.url, stt.model, '', { other, name: 'speaches' });
 	} else if (ears === 'whispercpp') {
 		stt.kind = 'whispercpp';
 		stt.url = (
@@ -369,10 +423,11 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	} else if (voice === 'speaches') {
 		tts.kind = 'openai';
 		const remembered = was === 'speaches' && cur.tts?.url ? cur.tts.url : speachesSoFar(c, cur);
-		tts.url = await ask.text('   Speaches URL', remembered);
+		tts.url = normalizeUrl(await ask.text('   Speaches URL', remembered));
 		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
 		tts.voice = await ask.text('   Voice', (was === 'speaches' && cur.tts?.voice) || SPEACHES_TTS_VOICE);
-		await speechReady(ask, checks, tts.url, tts.model, '');
+		const other = c.stt.kind === 'openai' && !c.stt.apiKey ? c.stt.url : undefined;
+		tts.url = await speechReady(ask, checks, tts.url, tts.model, '', { other, name: 'speaches-voice' });
 	} else if (voice === 'cloud') {
 		tts.kind = 'openai';
 		tts.url = normalizeUrl(
