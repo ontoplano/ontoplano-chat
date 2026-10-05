@@ -19,6 +19,8 @@ function checks(over: Partial<Checks> = {}): Checks & { ran: string[] } {
 			return true;
 		},
 		tailscaleName: async () => null,
+		speech: async () => null,
+		pull: async () => null,
 		current: {},
 		...over
 	};
@@ -188,6 +190,23 @@ describe('one step alone', () => {
 		const choices = await runWizard(scriptedAsk(['', 'tok'], log), checks(), 'ears');
 		expect(choices.token).toBe('tok');
 		expect(log.some((l) => l.includes('The model'))).toBe(true);
+	});
+});
+
+describe('the speech models', () => {
+	it('offers to download a model the server lacks, and checks again', async () => {
+		let has = false;
+		const c = checks({
+			speech: async (_u, model) => (has ? null : `the model ${model} is not installed on the server at x`),
+			pull: async () => {
+				has = true;
+				return null;
+			}
+		});
+		const log: string[] = [];
+		await runWizard(scriptedAsk(['', 'tok', '', '', '', '1', '', '', 'y'], log), c);
+		expect(has).toBe(true);
+		expect(log.join('\n')).toMatch(/✓ Systran\/faster-whisper-small answers at/);
 	});
 });
 

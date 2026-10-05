@@ -236,8 +236,8 @@ export function createApp(deps: ServerDeps): (req: IncomingMessage, res: ServerR
 					const [llm, stt, tts] = await Promise.all([engines.llm.check(), engines.stt.check(), engines.tts.check()]);
 					return json(res, 200, {
 						llm: { model: engines.llm.model, problem: llm },
-						stt: { kind: engines.stt.kind, problem: stt },
-						tts: { kind: engines.tts.kind, problem: tts },
+						stt: { kind: engines.stt.kind, about: engines.stt.about, problem: stt },
+						tts: { kind: engines.tts.kind, about: engines.tts.about, problem: tts },
 						tools: {
 							offered: engines.tools.current().length,
 							granted: engines.tools.granted().length,

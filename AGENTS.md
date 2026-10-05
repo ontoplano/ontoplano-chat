@@ -74,6 +74,15 @@ e2e/               Playwright — the page, at phone and desktop width
 - **One pairing code at a time.** `serve` prints a code only when none is
   pending; `setup` issues its code before starting the service. Two codes
   printed in a row means the first is dead.
+- **A readout names the thing, never the API flavour.** `openai` is the
+  config's `kind` — "an OpenAI-compatible server" — and a person reading
+  "voice openai" learns nothing. Every Stt and Tts carries `about` (the
+  model or voice, and where it runs); doctor, the start banner and the
+  phone's settings sheet print that.
+- **A local speech server is checked for the model, not only for a pulse.**
+  Speaches answers 404 on the first turn when the model is not downloaded;
+  `speechServerCheck` asks `/v1/models` first, and setup, doctor and
+  `ontoplano-chat models` offer the download.
 - **The data directory is private**: files are written `0600` through
   `writePrivate()`, the directory `0700`. Keep it so.
 

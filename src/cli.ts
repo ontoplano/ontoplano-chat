@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { terminalAsk } from './ask.js';
 import { OntoplanoMcp } from './mcp.js';
 import { openAiLlm } from './llm.js';
+import { speechServerCheck, speechServerPull } from './speech.js';
 import { renderConfig, runWizard, STEPS, type Checks, type Choices, type Step } from './wizard.js';
 
 import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } from './config.js';
@@ -41,6 +42,7 @@ const HELP = `ontoplano-chat ${VERSION} — a local voice assistant for ontoplan
   ontoplano-chat devices    the paired devices
   ontoplano-chat revoke <name>
   ontoplano-chat doctor     check the model, the ears, the voice and the app
+  ontoplano-chat models     download the speech models the config names onto the local speech server
   ontoplano-chat config     write ~/.config/ontoplano-chat/config.toml if there is none
   ontoplano-chat version
 `;
@@ -94,9 +96,7 @@ async function serve(): Promise<number> {
 		server.listen(c.server.port, c.server.host, resolve);
 	});
 	stamp(`ontoplano-chat ${VERSION}${fake ? ' (fake engines)' : ''} listening on ${c.server.host}:${c.server.port}`);
-	stamp(
-		`model ${engines.llm.model} at ${c.llm.url} · ears ${engines.stt.kind === 'browser' ? 'the device' : `${engines.stt.kind} at ${c.stt.url}`} · voice ${engines.tts.kind === 'browser' ? 'the device' : engines.tts.kind === 'piper' ? 'piper' : `at ${c.tts.url}`}`
-	);
+	stamp(`model ${engines.llm.model} at ${c.llm.url} · ears: ${engines.stt.about} · voice: ${engines.tts.about}`);
 	if (!devices.list().length) {
 		// A code setup or pair printed a moment ago is the one to keep; a second
 		// one here would silently replace it.
@@ -215,21 +215,27 @@ async function doctor(): Promise<number> {
 					: `install it: ${OLLAMA_INSTALL} — then: ollama pull ${engines.llm.model}`
 			: 'is the server up at that address? `ontoplano-chat setup model` changes it'
 	);
+	const sttProblem = await engines.stt.check();
 	tell(
-		`ears ${engines.stt.kind}${engines.stt.kind === 'browser' ? ' (the device recognises speech itself)' : ` at ${c.stt.url}`}`,
-		await engines.stt.check(),
-		engines.stt.kind === 'openai' && !c.stt.apiKey
-			? `nothing answers there. Speaches: ${SPEACHES_RUN.replace('-p 8000:8000', `-p ${port(c.stt.url)}:8000`)} — or \`ontoplano-chat setup ears\` with the port it really has`
-			: engines.stt.kind === 'whispercpp'
-				? "is whisper.cpp's server running on that port? `ontoplano-chat setup ears` changes it"
-				: 'check the address and the key: `ontoplano-chat setup ears`'
+		`ears: ${engines.stt.about}`,
+		sttProblem,
+		sttProblem && /not installed/.test(sttProblem)
+			? 'download it: `ontoplano-chat models` — or `ontoplano-chat setup ears`'
+			: engines.stt.kind === 'openai' && !c.stt.apiKey
+				? `nothing answers there. Speaches: ${SPEACHES_RUN.replace('-p 8000:8000', `-p ${port(c.stt.url)}:8000`)} — or \`ontoplano-chat setup ears\` with the port it really has`
+				: engines.stt.kind === 'whispercpp'
+					? "is whisper.cpp's server running on that port? `ontoplano-chat setup ears` changes it"
+					: 'check the address and the key: `ontoplano-chat setup ears`'
 	);
+	const ttsProblem = await engines.tts.check();
 	tell(
-		`voice ${engines.tts.kind}${engines.tts.kind === 'browser' ? ' (the device speaks itself)' : ''}`,
-		await engines.tts.check(),
-		engines.tts.kind === 'piper'
-			? 'piper is not on the PATH: https://github.com/rhasspy/piper — or `ontoplano-chat setup voice`'
-			: 'nothing answers there: `ontoplano-chat setup voice` changes it'
+		`voice: ${engines.tts.about}`,
+		ttsProblem,
+		ttsProblem && /not installed/.test(ttsProblem)
+			? 'download it: `ontoplano-chat models` — or `ontoplano-chat setup voice`'
+			: engines.tts.kind === 'piper'
+				? 'piper is not on the PATH: https://github.com/rhasspy/piper — or `ontoplano-chat setup voice`'
+				: 'nothing answers there: `ontoplano-chat setup voice` changes it'
 	);
 	if (c.ontoplano.token) {
 		const loaded = await engines.tools.load();
@@ -245,6 +251,37 @@ async function doctor(): Promise<number> {
 	const paired = new Devices(c.dataDir).list().length;
 	out(`  ${paired ? '✓' : '·'} ${paired} device${paired === 1 ? '' : 's'} paired`);
 	out(bad ? `\n${bad} thing${bad === 1 ? '' : 's'} to fix.` : '\nAll good.');
+	return bad ? 1 : 0;
+}
+
+/** Download the speech models the config names onto the local speech server(s). */
+async function pullModels(): Promise<number> {
+	const c = config();
+	let bad = 0;
+	const wanted: { what: string; url: string; model: string }[] = [];
+	if (c.stt.kind === 'openai' && !c.stt.apiKey) wanted.push({ what: 'ears', url: c.stt.url, model: c.stt.model });
+	if (c.tts.kind === 'openai' && !c.tts.apiKey) wanted.push({ what: 'voice', url: c.tts.url, model: c.tts.model });
+	if (!wanted.length) {
+		out('nothing to download: no local speech server in the config');
+		return 0;
+	}
+	for (const w of wanted) {
+		const already = await speechServerCheck(w.url, w.model, undefined);
+		if (!already) {
+			out(`  ✓ ${w.what}: ${w.model} is on ${w.url}`);
+			continue;
+		}
+		if (!/not installed/.test(already)) {
+			out(`  ✗ ${w.what}: ${already}`);
+			bad++;
+			continue;
+		}
+		out(`  → ${w.what}: downloading ${w.model} on ${w.url} (a minute or two)…`);
+		const problem =
+			(await speechServerPull(w.url, w.model, undefined)) ?? (await speechServerCheck(w.url, w.model, undefined));
+		out(problem ? `  ✗ ${w.what}: ${problem}` : `  ✓ ${w.what}: ${w.model} is on ${w.url}`);
+		if (problem) bad++;
+	}
 	return bad ? 1 : 0;
 }
 
@@ -345,6 +382,8 @@ async function setup(step?: string): Promise<number> {
 			}
 		},
 		llm: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).check(),
+		speech: (url, model, apiKey) => speechServerCheck(url, model, apiKey || undefined),
+		pull: (url, model, apiKey) => speechServerPull(url, model, apiKey || undefined),
 		has,
 		run: shell,
 		tailscaleName,
@@ -429,6 +468,8 @@ export async function main(argv: string[]): Promise<number> {
 			return revoke(rest[0]);
 		case 'doctor':
 			return doctor();
+		case 'models':
+			return pullModels();
 		case 'config':
 			return writeConfig();
 		case 'version':

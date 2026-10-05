@@ -71,6 +71,10 @@ export type Checks = {
 	run(line: string): Promise<boolean>;
 	/** This machine's tailnet https name, if Tailscale is up. */
 	tailscaleName(): Promise<string | null>;
+	/** Is a speech server there with that model: null, or a problem. */
+	speech(url: string, model: string, apiKey: string): Promise<string | null>;
+	/** Ask a speech server to download a model: null when it did. */
+	pull(url: string, model: string, apiKey: string): Promise<string | null>;
 	/** What the config says now, for defaults — and for the steps not asked. */
 	current: Partial<Choices>;
 };
@@ -125,6 +129,21 @@ language = ${quote(c.language)}
 }
 
 const sttLanguage = (tag: string): string => tag.toLowerCase().split(/[-_]/)[0] ?? 'en';
+
+/** A speech server checked, and its model downloaded on request when it is the only thing missing. */
+async function speechReady(ask: Ask, checks: Checks, url: string, model: string, apiKey: string): Promise<void> {
+	let problem = await checks.speech(url, model, apiKey);
+	if (problem && /not installed/.test(problem)) {
+		ask.say(`   ✗ ${problem}`);
+		if (await ask.yes('   Download it now? (a few hundred MB; a minute or two)', true)) {
+			const pulled = await checks.pull(url, model, apiKey);
+			problem = pulled ?? (await checks.speech(url, model, apiKey));
+		}
+	}
+	ask.say(
+		problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : `   ✓ ${model} answers at ${url}`
+	);
+}
 
 /** What the config says, with a default for anything it does not: the ground every step writes over. */
 function baseChoices(cur: Partial<Choices>): Choices {
@@ -283,6 +302,7 @@ async function stepEars(ask: Ask, checks: Checks, c: Choices, n: string): Promis
 		stt.model = await ask.text('   Whisper model', (was === 'speaches' && cur.stt?.model) || stt.model);
 		if (checks.has('docker') && (await ask.yes(`   Start the Speaches container now? (${SPEACHES_RUN})`, false)))
 			await checks.run(SPEACHES_RUN);
+		await speechReady(ask, checks, stt.url, stt.model, '');
 	} else if (ears === 'whispercpp') {
 		stt.kind = 'whispercpp';
 		stt.url = (
@@ -331,6 +351,7 @@ async function stepVoice(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 		tts.url = await ask.text('   Speaches URL', remembered);
 		tts.model = await ask.text('   Model', (was === 'speaches' && cur.tts?.model) || SPEACHES_TTS_MODEL);
 		tts.voice = await ask.text('   Voice', (was === 'speaches' && cur.tts?.voice) || SPEACHES_TTS_VOICE);
+		await speechReady(ask, checks, tts.url, tts.model, '');
 	} else if (voice === 'cloud') {
 		tts.kind = 'openai';
 		tts.url = normalizeUrl(

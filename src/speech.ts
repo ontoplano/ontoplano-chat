@@ -11,6 +11,8 @@ import { SPEECH_TIMEOUT_MS } from './constants.js';
 
 export type Stt = {
 	kind: 'openai' | 'whispercpp' | 'browser';
+	/** What it is, for a person: the model and where it runs — never the API flavour alone. */
+	about: string;
 	transcribe(audio: Uint8Array, mime: string, language?: string): Promise<string>;
 	check(): Promise<string | null>;
 };
@@ -19,12 +21,71 @@ export type Spoken = { mime: string; bytes: Uint8Array };
 
 export type Tts = {
 	kind: 'openai' | 'piper' | 'browser';
-	/** `null` when the phone speaks for itself. */
+	/** What it is, for a person: the voice and where it runs — never the API flavour alone. */
+	about: string;
+	/** `null` when the device speaks for itself. */
 	speak(text: string): Promise<Spoken | null>;
 	check(): Promise<string | null>;
 };
 
 export class SpeechError extends Error {}
+
+const bearer = (apiKey?: string): Record<string, string> => (apiKey ? { Authorization: `Bearer ${apiKey}` } : {});
+
+/** The models an OpenAI-compatible server lists, or null when it does not list any (a cloud, or not that kind of server). */
+async function modelsOn(url: string, apiKey: string | undefined, fetchImpl: typeof fetch): Promise<string[] | null> {
+	try {
+		const res = await fetchImpl(`${url}/v1/models`, { headers: bearer(apiKey), signal: AbortSignal.timeout(5000) });
+		if (!res.ok) return null;
+		const body = (await res.json()) as { data?: { id?: string }[] };
+		return Array.isArray(body.data) ? body.data.map((m) => m.id ?? '').filter(Boolean) : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Is the server there, and does it have the model? A local server (Speaches,
+ * LocalAI) answers 404 to a turn whose model is not downloaded, so the check
+ * asks first. Null when all is well.
+ */
+export async function speechServerCheck(
+	url: string,
+	model: string,
+	apiKey: string | undefined,
+	fetchImpl: typeof fetch = fetch
+): Promise<string | null> {
+	try {
+		const res = await fetchImpl(url, { method: 'GET', headers: bearer(apiKey), signal: AbortSignal.timeout(5000) });
+		if (res.status >= 500) return `${url} answered ${res.status}`;
+	} catch (e) {
+		return `nothing answers at ${url}: ${(e as Error).message}`;
+	}
+	if (apiKey || !model) return null;
+	const have = await modelsOn(url, apiKey, fetchImpl);
+	if (have && !have.includes(model)) return `the model ${model} is not installed on the server at ${url}`;
+	return null;
+}
+
+/** Ask a local server to download a model (Speaches: POST /v1/models/{id}). Null when it did, else why not. */
+export async function speechServerPull(
+	url: string,
+	model: string,
+	apiKey: string | undefined,
+	fetchImpl: typeof fetch = fetch
+): Promise<string | null> {
+	try {
+		const res = await fetchImpl(`${url}/v1/models/${encodeURIComponent(model)}`, {
+			method: 'POST',
+			headers: bearer(apiKey),
+			signal: AbortSignal.timeout(30 * 60 * 1000)
+		});
+		if (res.ok || res.status === 201) return null;
+		return `the server answered ${res.status}: ${(await res.text()).slice(0, 200)}`;
+	} catch (e) {
+		return `could not ask ${url} to download it: ${(e as Error).message}`;
+	}
+}
 
 type SttOptions = {
 	kind: 'openai' | 'whispercpp';
@@ -50,6 +111,10 @@ export function httpStt(o: SttOptions): Stt {
 	const headers: Record<string, string> = o.apiKey ? { Authorization: `Bearer ${o.apiKey}` } : {};
 	return {
 		kind: o.kind,
+		about:
+			o.kind === 'whispercpp'
+				? `whisper.cpp at ${o.url}`
+				: `${o.model} at ${o.url}${o.apiKey ? '' : ' (an OpenAI-compatible server)'}`,
 		async transcribe(audio, mime, language = o.language) {
 			const form = new FormData();
 			form.append('file', new Blob([audio], { type: mime }), `turn.${extensionOf(mime)}`);
@@ -72,18 +137,22 @@ export function httpStt(o: SttOptions): Stt {
 			return (body.text ?? '').trim();
 		},
 		async check() {
-			try {
-				const res = await fetchImpl(o.url, { method: 'GET', headers, signal: AbortSignal.timeout(5000) });
-				return res.status >= 500 ? `${o.url} answered ${res.status}` : null;
-			} catch (e) {
-				return `no transcriber at ${o.url}: ${(e as Error).message}`;
+			if (o.kind === 'whispercpp') {
+				try {
+					const res = await fetchImpl(o.url, { method: 'GET', signal: AbortSignal.timeout(5000) });
+					return res.status >= 500 ? `${o.url} answered ${res.status}` : null;
+				} catch (e) {
+					return `no transcriber at ${o.url}: ${(e as Error).message}`;
+				}
 			}
+			return speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
 		}
 	};
 }
 
 export const browserStt: Stt = {
 	kind: 'browser',
+	about: 'the device recognises speech itself',
 	transcribe: async () => {
 		throw new SpeechError('speech is recognised on the phone (stt.kind = "browser"); send text');
 	},
@@ -92,6 +161,7 @@ export const browserStt: Stt = {
 
 export const browserTts: Tts = {
 	kind: 'browser',
+	about: 'the device speaks itself',
 	speak: async () => null,
 	check: async () => null
 };
@@ -104,6 +174,7 @@ export function openAiTts(o: OpenAiTtsOptions): Tts {
 	if (o.apiKey) headers.Authorization = `Bearer ${o.apiKey}`;
 	return {
 		kind: 'openai',
+		about: `${o.voice || o.model} at ${o.url}${o.apiKey ? '' : ' (an OpenAI-compatible server)'}`,
 		async speak(text) {
 			let res: Response;
 			try {
@@ -121,12 +192,7 @@ export function openAiTts(o: OpenAiTtsOptions): Tts {
 			return { mime, bytes: new Uint8Array(await res.arrayBuffer()) };
 		},
 		async check() {
-			try {
-				const res = await fetchImpl(o.url, { method: 'GET', signal: AbortSignal.timeout(5000) });
-				return res.status >= 500 ? `${o.url} answered ${res.status}` : null;
-			} catch (e) {
-				return `no voice at ${o.url}: ${(e as Error).message}`;
-			}
+			return speechServerCheck(o.url, o.model, o.apiKey, fetchImpl);
 		}
 	};
 }
@@ -136,6 +202,7 @@ type PiperOptions = { command: string; model: string };
 export function piperTts(o: PiperOptions): Tts {
 	return {
 		kind: 'piper',
+		about: `piper, voice ${o.model}`,
 		speak(text) {
 			return new Promise<Spoken>((resolve, reject) => {
 				const child = spawn(o.command, ['--model', o.model, '--output_file', '-'], {

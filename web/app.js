@@ -623,8 +623,8 @@ async function openSettings() {
 			dd.className = problem ? 'bad' : '';
 		};
 		say(dds[2], s.llm.model, s.llm.problem);
-		say(dds[3], s.stt.kind === 'browser' ? t('settings.browser') : s.stt.kind, s.stt.problem);
-		say(dds[4], s.tts.kind === 'browser' ? t('settings.browser') : s.tts.kind, s.tts.problem);
+		say(dds[3], s.stt.kind === 'browser' ? t('settings.browser') : s.stt.about, s.stt.problem);
+		say(dds[4], s.tts.kind === 'browser' ? t('settings.browser') : s.tts.about, s.tts.problem);
 		say(dds[5], `${s.tools.offered} / ${s.tools.granted}`, s.tools.problem);
 		dds[5].title = s.tools.names.join(', ');
 	} catch {

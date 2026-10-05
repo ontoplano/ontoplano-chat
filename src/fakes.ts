@@ -178,6 +178,7 @@ export function fakeLlm(): Llm & { prompts: Message[][] } {
 /** Ears that hear whatever the bytes spell, so a test can send its sentence as audio. */
 export const fakeStt: Stt = {
 	kind: 'openai',
+	about: 'fake ears',
 	async transcribe(audio) {
 		return Buffer.from(audio).toString('utf8');
 	},
@@ -189,6 +190,7 @@ export const fakeStt: Stt = {
 /** A voice that answers with a tiny silent WAV, so the phone's playback path runs. */
 export const fakeTts: Tts = {
 	kind: 'piper',
+	about: 'a fake voice',
 	async speak() {
 		return { mime: 'audio/wav', bytes: silentWav(200) };
 	},
