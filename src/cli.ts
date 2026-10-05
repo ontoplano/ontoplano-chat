@@ -393,6 +393,7 @@ async function setup(step?: string): Promise<number> {
 		},
 		llm: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).check(),
 		llmPull: (url, model, apiKey) => openAiLlm({ url, model, apiKey, timeoutMs: 10_000 }).pull(),
+		llmModels: (url, apiKey) => openAiLlm({ url, model: '', apiKey, timeoutMs: 10_000 }).models(),
 		speech: (url, model, apiKey) => speechServerCheck(url, model, apiKey || undefined),
 		pull: (url, model, apiKey) => speechServerPull(url, model, apiKey || undefined),
 		has,

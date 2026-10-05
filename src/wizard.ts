@@ -67,6 +67,8 @@ export type Checks = {
 	llm(url: string, model: string, apiKey: string): Promise<string | null>;
 	/** Ask the runner to download the model: null when it did. */
 	llmPull(url: string, model: string, apiKey: string): Promise<string | null>;
+	/** The models the runner already has. */
+	llmModels(url: string, apiKey: string): Promise<string[]>;
 	/** Is a command on the PATH. */
 	has(command: string): boolean;
 	/** Run a shell line with the terminal attached; answers whether it succeeded. */
@@ -260,9 +262,26 @@ async function stepModel(ask: Ask, checks: Checks, c: Choices, n: string): Promi
 	}
 	if (problem && /not pulled/.test(problem)) {
 		ask.say(`   ✗ ${problem}`);
-		if (await ask.yes(`   Pull ${c.llm.model} now? (a few GB; several minutes)`, true)) {
+		// What it has is usually what was meant: offer those before a download.
+		const have = (await checks.llmModels(c.llm.url, c.llm.apiKey)).slice(0, 8);
+		const pick = have.length
+			? await ask.choose(
+					`   The runner has ${have.length === 1 ? 'one model' : `${have.length} models`}. Use one of them, or pull ${c.llm.model}?`,
+					[
+						...have.map((m) => ({ key: m, label: `use ${m}` })),
+						{ key: '::pull', label: `pull ${c.llm.model} (a few GB; several minutes)` }
+					],
+					have[0] as string
+				)
+			: (await ask.yes(`   Pull ${c.llm.model} now? (a few GB; several minutes)`, true))
+				? '::pull'
+				: '::no';
+		if (pick === '::pull') {
 			const pulled = await checks.llmPull(c.llm.url, c.llm.model, c.llm.apiKey);
 			problem = pulled ?? (await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey));
+		} else if (pick !== '::no') {
+			c.llm.model = pick;
+			problem = await checks.llm(c.llm.url, c.llm.model, c.llm.apiKey);
 		}
 	}
 	ask.say(problem ? `   ✗ ${problem} — \`ontoplano-chat doctor\` checks again later` : '   ✓ the model answers');

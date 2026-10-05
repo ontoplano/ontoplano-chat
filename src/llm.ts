@@ -24,6 +24,8 @@ export type Llm = {
 	check(): Promise<string | null>;
 	/** Ask the runner to download the model (Ollama's /api/pull). `null` when it did, else why not. */
 	pull(): Promise<string | null>;
+	/** The models the runner lists, or none when it does not list any. */
+	models(): Promise<string[]>;
 	readonly model: string;
 };
 
@@ -99,6 +101,16 @@ export function openAiLlm(o: LlmOptions): Llm {
 				raw,
 				toolCalls: raw.map((c) => ({ id: c.id, name: c.function.name, args: parseArgs(c.function.arguments) }))
 			};
+		},
+		async models() {
+			try {
+				const res = await fetchImpl(`${o.url}/models`, { headers, signal: AbortSignal.timeout(5000) });
+				if (!res.ok) return [];
+				const body = (await res.json()) as { data?: { id: string }[] };
+				return Array.isArray(body.data) ? body.data.map((m) => m.id).filter(Boolean) : [];
+			} catch {
+				return [];
+			}
 		},
 		async pull() {
 			// Ollama's own API sits beside its OpenAI-compatible one: …/v1 → …/api/pull.

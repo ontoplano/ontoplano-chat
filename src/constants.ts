@@ -26,7 +26,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.6' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.7' };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;

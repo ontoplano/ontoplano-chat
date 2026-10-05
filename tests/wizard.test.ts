@@ -20,6 +20,7 @@ function checks(over: Partial<Checks> = {}): Checks & { ran: string[] } {
 		},
 		tailscaleName: async () => null,
 		llmPull: async () => null,
+		llmModels: async () => [],
 		speech: async () => null,
 		pull: async () => null,
 		current: {},
@@ -200,6 +201,20 @@ describe('one step alone', () => {
 		const choices = await runWizard(scriptedAsk(['', 'tok'], log), checks(), 'ears');
 		expect(choices.token).toBe('tok');
 		expect(log.some((l) => l.includes('The model'))).toBe(true);
+	});
+});
+
+describe('a runner that has other models', () => {
+	it('offers them before a download, and takes the pick', async () => {
+		const c = checks({
+			llm: async (_u, model) =>
+				model === 'qwen3.5:9b' ? null : `model "${model}" is not pulled: the runner lists qwen3.5:9b`,
+			llmModels: async () => ['qwen3.5:9b']
+		});
+		const log: string[] = [];
+		const choices = await runWizard(scriptedAsk(['', 'tok', '', '', 'qwen2.5:9b', '1'], log), c);
+		expect(choices.llm.model).toBe('qwen3.5:9b');
+		expect(log.join('\n')).toContain('✓ the model answers');
 	});
 });
 
