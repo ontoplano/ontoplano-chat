@@ -66,6 +66,11 @@ describe('a turn', () => {
 		expect(record?.actions[0]).toMatchObject({ name: 'add_task', ok: true });
 	});
 
+	it('skips voice synthesis when the device has muted replies', async () => {
+		const events = await collect((emit) => assistant.turn('pixel', { text: 'hello', speak: false }, emit));
+		expect(types(events)).toEqual(['thinking', 'reply', 'done']);
+	});
+
 	it('transcribes audio first and shows the words', async () => {
 		const events = await collect((emit) =>
 			assistant.turn(

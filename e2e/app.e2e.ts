@@ -50,6 +50,18 @@ test('a typed turn draws the reply and a receipt that opens the app', async ({ p
 	await expect(page.locator('#text')).toBeEnabled();
 });
 
+test('speaker button switches spoken replies off and keeps the setting', async ({ page }) => {
+	await paired(page);
+	const button = page.locator('#toggleVoice');
+	await expect(button).toHaveAttribute('aria-pressed', 'true');
+	await button.click();
+	await expect(button).toHaveAttribute('aria-pressed', 'false');
+	await page.reload();
+	await expect(button).toHaveAttribute('aria-pressed', 'false');
+	await page.locator('#openSettings').click();
+	await expect(page.locator('#speakReplies')).not.toBeChecked();
+});
+
 test('a destructive action asks, and the yes keeps its place', async ({ page }, info) => {
 	await paired(page);
 	// The fake app has two notebooks, and each project removes its own: the state is one server's.

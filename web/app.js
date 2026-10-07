@@ -84,6 +84,7 @@ function unpair() {
 /* ---------- screens ---------- */
 
 function showPair() {
+	$('toggleVoice').hidden = true;
 	$('screenPair').hidden = false;
 	$('screenChat').hidden = true;
 	$('composer').hidden = true;
@@ -105,6 +106,8 @@ async function showChat() {
 	}
 	state.me = await res.json();
 	setLanguage(state.me.assistant.language);
+	$('toggleVoice').hidden = false;
+	updateVoiceToggle();
 	$('assistantName').textContent = state.me.assistant.name;
 	document.title = state.me.assistant.name;
 	$('status').textContent = '';
@@ -248,7 +251,7 @@ function drawAsk(turn, id, question) {
 		runTurn('/api/confirm', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ id, yes: value })
+			body: JSON.stringify({ id, yes: value, speak: voiceEnabled() })
 		});
 	};
 	yes.addEventListener('click', () => answer(true));
@@ -367,7 +370,7 @@ function sendText(text) {
 	runTurn('/api/turn', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ text: clean })
+		body: JSON.stringify({ text: clean, speak: voiceEnabled() })
 	});
 }
 
@@ -378,7 +381,11 @@ function sendHeard(text) {
 	const bubble = addMeTurn(clean, true);
 	runTurn(
 		'/api/turn',
-		{ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: clean }) },
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ text: clean, speak: voiceEnabled() })
+		},
 		bubble
 	);
 }
@@ -386,7 +393,11 @@ function sendHeard(text) {
 function sendAudio(blob, mime) {
 	stopVoice();
 	const bubble = addMeTurn('…', true);
-	runTurn('/api/turn', { method: 'POST', headers: { 'Content-Type': mime }, body: blob }, bubble);
+	runTurn(
+		`/api/turn?speak=${voiceEnabled() ? '1' : '0'}`,
+		{ method: 'POST', headers: { 'Content-Type': mime }, body: blob },
+		bubble
+	);
 }
 
 $('typed').addEventListener('submit', (event) => {
@@ -397,6 +408,26 @@ $('typed').addEventListener('submit', (event) => {
 });
 
 /* ---------- the voice ---------- */
+
+const voiceEnabled = () => pref.get(SPEAK_KEY, '1') === '1';
+
+function updateVoiceToggle() {
+	const on = voiceEnabled();
+	const button = $('toggleVoice');
+	button.setAttribute('aria-pressed', String(on));
+	button.querySelector('use').setAttribute('href', on ? '#i-speaker' : '#i-muted');
+	button.title = t(on ? 'chat.voice.on' : 'chat.voice.off');
+	button.setAttribute('aria-label', button.title);
+	$('speakReplies').checked = on;
+}
+
+function setVoiceEnabled(on) {
+	pref.set(SPEAK_KEY, on ? '1' : '0');
+	if (!on) stopVoice();
+	updateVoiceToggle();
+}
+
+$('toggleVoice').addEventListener('click', () => setVoiceEnabled(!voiceEnabled()));
 
 /** The voice is talking: the bar says so, and pressing it cuts the voice off. */
 function voiceStarted() {
@@ -423,7 +454,7 @@ function stopVoice() {
 
 function speak(text) {
 	if (!state.me || state.me.tts !== 'browser') return;
-	if (pref.get(SPEAK_KEY, '1') !== '1') return;
+	if (!voiceEnabled()) return;
 	if (!('speechSynthesis' in window)) return;
 	speechSynthesis.cancel();
 	const u = new SpeechSynthesisUtterance(text);
@@ -438,7 +469,7 @@ function speak(text) {
 }
 
 function play(mime, base64) {
-	if (pref.get(SPEAK_KEY, '1') !== '1') return;
+	if (!voiceEnabled()) return;
 	stopVoice();
 	const audio = new Audio(`data:${mime};base64,${base64}`);
 	state.audio = audio;
@@ -632,7 +663,7 @@ $('openSettings').addEventListener('click', () => openSettings());
 $('closeSettings').addEventListener('click', () => settings.close());
 
 async function openSettings() {
-	$('speakReplies').checked = pref.get(SPEAK_KEY, '1') === '1';
+	updateVoiceToggle();
 	$('browserEars').checked = pref.get(EARS_KEY, '0') === '1';
 	$('browserEars').parentElement.hidden = !state.me || state.me.stt === 'browser';
 	$('forget').hidden = false;
@@ -676,7 +707,7 @@ async function openSettings() {
 	}
 }
 
-$('speakReplies').addEventListener('change', (e) => pref.set(SPEAK_KEY, e.target.checked ? '1' : '0'));
+$('speakReplies').addEventListener('change', (e) => setVoiceEnabled(e.target.checked));
 $('browserEars').addEventListener('change', (e) => pref.set(EARS_KEY, e.target.checked ? '1' : '0'));
 
 $('forget').addEventListener('click', () => {

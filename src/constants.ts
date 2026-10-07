@@ -6,6 +6,7 @@
  * a pairing code lives, how much audio one turn may carry, which port is the
  * default. Change them here, never inline.
  */
+import { VERSION } from './version.js';
 
 /** The port the server listens on when the config says nothing. 1493 is the app, 1494 the docs, 1495–1496 the site. */
 export const DEFAULT_PORT = 1497;
@@ -26,7 +27,7 @@ export const MCP_PATH = '/api/mcp';
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
 /** How this client introduces itself to the app. */
-export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: '0.1.12' };
+export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: VERSION };
 
 /** A pairing code is this many digits. */
 export const PAIRING_CODE_DIGITS = 6;

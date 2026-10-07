@@ -41,7 +41,7 @@ export type TurnEvent =
 
 export type Emit = (event: TurnEvent) => void;
 
-export type Input = { text?: string; audio?: { bytes: Uint8Array; mime: string } };
+export type Input = { text?: string; audio?: { bytes: Uint8Array; mime: string }; speak?: boolean };
 
 export type ToolCaller = { call(name: string, args: Record<string, unknown>): Promise<ToolResult> };
 
@@ -187,7 +187,7 @@ export class Assistant {
 					}
 					if (c.pending) {
 						const answer = yesOrNo(heard, c.language);
-						if (answer !== null) return this.resume(device, c.pending.id, answer, tracedEmit);
+						if (answer !== null) return this.resume(device, c.pending.id, answer, tracedEmit, input.speak !== false);
 						// Something else was said: the question lapses and the new thing is heard.
 						c.pending = null;
 					}
@@ -196,7 +196,7 @@ export class Assistant {
 						...this.recentContext(c),
 						{ role: 'user', content: heard }
 					];
-					await this.run(device, c, messages, 0, [], heard, tracedEmit);
+					await this.run(device, c, messages, 0, [], heard, tracedEmit, input.speak !== false);
 				} catch (e) {
 					tracedEmit({ type: 'error', message: (e as Error).message });
 					this.o.history.append({
@@ -214,7 +214,7 @@ export class Assistant {
 	}
 
 	/** Answer a pending "are you sure?" — from a button, or from a yes/no said aloud. */
-	async resume(device: string, id: string, yes: boolean, emit: Emit): Promise<void> {
+	async resume(device: string, id: string, yes: boolean, emit: Emit, speak = true): Promise<void> {
 		const c = this.conversation(device);
 		return this.telemetry.run(
 			'ontoplano-confirmation',
@@ -250,7 +250,7 @@ export class Assistant {
 					}
 					const stopped = await this.runCalls(device, c, p.rest, messages, p.round, actions, p.heard, tracedEmit);
 					if (stopped) return;
-					await this.run(device, c, messages, p.round + 1, actions, p.heard, tracedEmit);
+					await this.run(device, c, messages, p.round + 1, actions, p.heard, tracedEmit, speak);
 				} catch (e) {
 					tracedEmit({ type: 'error', message: (e as Error).message });
 					this.o.history.append({
@@ -283,7 +283,8 @@ export class Assistant {
 		round: number,
 		actions: ActionRecord[],
 		heard: string,
-		emit: Emit
+		emit: Emit,
+		speak: boolean
 	): Promise<void> {
 		for (let r = round; r <= this.o.maxToolRounds; r++) {
 			emit({ type: 'thinking' });
@@ -321,7 +322,7 @@ export class Assistant {
 				continue;
 			}
 			const text = reply.content || fallbackReply(this.o.language);
-			await this.finish(device, c, heard, text, actions, emit);
+			await this.finish(device, c, heard, text, actions, emit, speak);
 			return;
 		}
 	}
@@ -418,18 +419,21 @@ export class Assistant {
 		heard: string,
 		text: string,
 		actions: ActionRecord[],
-		emit: Emit
+		emit: Emit,
+		speak: boolean
 	): Promise<void> {
 		emit({ type: 'reply', text });
 		c.messages.push({ role: 'user', content: heard }, { role: 'assistant', content: text });
 		const keep = this.o.historyTurns * 2;
 		if (c.messages.length > keep) c.messages.splice(0, c.messages.length - keep);
 		this.o.history.append({ at: this.now().toISOString(), device, heard, reply: text, actions });
-		try {
-			const spoken = await this.o.tts.speak(text, c.language.toLowerCase().split(/[-_]/)[0]);
-			if (spoken) emit({ type: 'audio', mime: spoken.mime, base64: Buffer.from(spoken.bytes).toString('base64') });
-		} catch (e) {
-			emit({ type: 'error', message: `voice: ${(e as Error).message}` });
+		if (speak) {
+			try {
+				const spoken = await this.o.tts.speak(text, c.language.toLowerCase().split(/[-_]/)[0]);
+				if (spoken) emit({ type: 'audio', mime: spoken.mime, base64: Buffer.from(spoken.bytes).toString('base64') });
+			} catch (e) {
+				emit({ type: 'error', message: `voice: ${(e as Error).message}` });
+			}
 		}
 		emit({ type: 'done' });
 	}

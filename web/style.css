@@ -108,6 +108,10 @@ body {
 		background 120ms,
 		border-color 120ms;
 }
+
+#toggleVoice[aria-pressed='false'] {
+	color: var(--muted);
+}
 .iconbtn:hover {
 	background: var(--hover);
 	border-color: var(--line);

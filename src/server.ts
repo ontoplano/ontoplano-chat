@@ -261,18 +261,22 @@ export function createApp(deps: ServerDeps): (req: IncomingMessage, res: ServerR
 					if (type.startsWith('audio/')) {
 						const bytes = await readBody(req, MAX_AUDIO_BYTES);
 						const emit = stream(res, req);
-						await assistant.turn(device.name, { audio: { bytes: new Uint8Array(bytes), mime: type } }, emit);
+						await assistant.turn(
+							device.name,
+							{ audio: { bytes: new Uint8Array(bytes), mime: type }, speak: url.searchParams.get('speak') !== '0' },
+							emit
+						);
 						return res.end();
 					}
 					const body = await readJson(req);
 					const emit = stream(res, req);
-					await assistant.turn(device.name, { text: String(body.text ?? '') }, emit);
+					await assistant.turn(device.name, { text: String(body.text ?? ''), speak: body.speak !== false }, emit);
 					return res.end();
 				}
 				if (path === '/api/confirm' && req.method === 'POST') {
 					const body = await readJson(req);
 					const emit = stream(res, req);
-					await assistant.resume(device.name, String(body.id ?? ''), body.yes === true, emit);
+					await assistant.resume(device.name, String(body.id ?? ''), body.yes === true, emit, body.speak !== false);
 					return res.end();
 				}
 				throw new HttpError(404, 'not-found');
