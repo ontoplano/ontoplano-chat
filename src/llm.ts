@@ -15,7 +15,13 @@ export type Message =
 
 type RawToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 
-export type Reply = { content: string; toolCalls: ToolCall[]; raw: RawToolCall[]; thinking: string };
+export type Reply = {
+	content: string;
+	toolCalls: ToolCall[];
+	raw: RawToolCall[];
+	thinking: string;
+	usage?: { input: number; output: number; total: number };
+};
 
 export type Llm = {
 	/** One completion. With tool calls, `content` is usually empty. */
@@ -27,6 +33,7 @@ export type Llm = {
 	/** The models the runner lists, or none when it does not list any. */
 	models(): Promise<string[]>;
 	readonly model: string;
+	readonly provider?: string;
 };
 
 export class LlmError extends Error {}
@@ -62,6 +69,7 @@ export function openAiLlm(o: LlmOptions): Llm {
 	if (o.apiKey) headers.Authorization = `Bearer ${o.apiKey}`;
 	return {
 		model: o.model,
+		provider: new URL(o.url).hostname,
 		async chat(messages, tools) {
 			const signal = AbortSignal.timeout(o.timeoutMs);
 			let res: Response;
@@ -87,6 +95,7 @@ export function openAiLlm(o: LlmOptions): Llm {
 			}
 			if (!res.ok) throw new LlmError(`the model answered ${res.status}: ${(await res.text()).slice(0, 300)}`);
 			const body = (await res.json()) as {
+				usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 				choices?: {
 					message?: {
 						content?: string | null;
@@ -114,6 +123,13 @@ export function openAiLlm(o: LlmOptions): Llm {
 			return {
 				content: content.trim(),
 				thinking: thinking.trim(),
+				usage: body.usage
+					? {
+							input: body.usage.prompt_tokens ?? 0,
+							output: body.usage.completion_tokens ?? 0,
+							total: body.usage.total_tokens ?? (body.usage.prompt_tokens ?? 0) + (body.usage.completion_tokens ?? 0)
+						}
+					: undefined,
 				raw,
 				toolCalls: raw.map((c) => ({ id: c.id, name: c.function.name, args: parseArgs(c.function.arguments) }))
 			};

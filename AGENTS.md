@@ -64,6 +64,12 @@ e2e/               Playwright — the page, at phone and desktop width
   `src/fakes.ts`; the unit tests and the e2e suite run against them. A new
   tool the fake app should understand is added there, with a sentence shape
   the fake model maps to it.
+- **Agent evals use synthetic data.** `make eval` sends 29 cases from
+  `eval/cases.ts` through the real model and a disposable in-memory tool backend;
+  it never connects to a real Ontoplano account. `make eval-check` validates the
+  fixtures without a model. Refresh `eval/tools.json` from the sibling app's
+  static MCP manifest with `node scripts/update-eval-tools.mjs`, then review
+  descriptions and expectations.
 - **Say "device", not "phone", wherever the thing pairing could be this
   computer's own browser** — the command's words, the wizard's, the page's.
   The first real run paired the computer and read "now pair the phone" after

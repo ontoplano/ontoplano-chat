@@ -11,7 +11,7 @@
 include defaults.env
 
 .DEFAULT_GOAL := help
-.PHONY: help setup stack build link dev serve demo pair devices doctor config test test-unit test-e2e lint format icons install-service uninstall-service logs
+.PHONY: help setup stack build link dev serve demo pair devices doctor config test test-unit test-e2e eval eval-langfuse eval-check lint format icons install-service uninstall-service logs
 
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
@@ -25,6 +25,9 @@ help:
 	@echo "  make doctor            check the model, the ears, the voice and the app"
 	@echo "  make install-service   run it as a user service from now on (make logs follows it)"
 	@echo "  make test              unit tests, then the browser suite"
+	@echo "  make eval              run the 29-case agent evaluation against a model and synthetic app data"
+	@echo "  make eval-langfuse     run the same cases as a Langfuse experiment"
+	@echo "  make eval-check        validate evaluation cases without contacting a model"
 	@echo "  make lint              prettier, eslint, tsc"
 	@echo
 	@echo "  make link              put \`ontoplano-chat\` on your PATH (build does it too)"
@@ -81,6 +84,15 @@ test-unit:
 
 test-e2e:
 	@yarn -s test:e2e
+
+eval:
+	@yarn -s tsx eval/run.ts
+
+eval-langfuse:
+	@yarn -s tsx eval/run.ts --langfuse
+
+eval-check:
+	@yarn -s tsx eval/run.ts --check
 
 lint:
 	@yarn -s lint

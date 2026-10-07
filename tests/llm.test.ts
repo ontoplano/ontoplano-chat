@@ -75,6 +75,19 @@ describe('the runner', () => {
 });
 
 describe('a thinking model', () => {
+	it('preserves provider-reported token usage', async () => {
+		const llm = openAiLlm({
+			url: 'http://x/v1',
+			model: 'm',
+			timeoutMs: 5000,
+			fetchImpl: async () =>
+				Response.json({
+					choices: [{ message: { content: 'Done.' } }],
+					usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 }
+				})
+		});
+		expect((await llm.chat([{ role: 'user', content: 'hi' }], [])).usage).toEqual({ input: 12, output: 4, total: 16 });
+	});
 	it('keeps its thinking out of the answer', async () => {
 		const llm = openAiLlm({
 			url: 'http://x/v1',

@@ -18,6 +18,7 @@ import type { ActionRecord, History } from './history.js';
 import type { Llm, Message, ToolCall } from './llm.js';
 import { matchesAny, toLlmTools, type LlmTool, type McpTool, type ToolResult } from './mcp.js';
 import { nowFacts, systemPrompt } from './prompt.js';
+import { disabledTelemetry, type Telemetry } from './observability.js';
 import type { Stt, Tts } from './speech.js';
 
 export type TurnEvent =
@@ -32,7 +33,7 @@ export type TurnEvent =
 			summary?: string;
 			link?: string | null;
 	  }
-	| { type: 'confirm'; id: string; name: string; question: string }
+	| { type: 'confirm'; id: string; name: string; args: Record<string, unknown>; question: string }
 	| { type: 'reply'; text: string }
 	| { type: 'audio'; mime: string; base64: string }
 	| { type: 'error'; message: string }
@@ -61,6 +62,7 @@ export type AssistantOptions = {
 	now?: () => Date;
 	/** One line per step of a turn — what was heard, each model call, its thinking, each tool and how it went. */
 	log?: (line: string) => void;
+	telemetry?: Telemetry;
 };
 
 type Pending = {
@@ -76,6 +78,7 @@ type Pending = {
 };
 
 type Conversation = {
+	sessionId: string;
 	messages: Message[];
 	touchedAt: number;
 	pending: Pending | null;
@@ -90,17 +93,19 @@ export class Assistant {
 	private readonly now: () => Date;
 
 	private readonly log: (line: string) => void;
+	private readonly telemetry: Telemetry;
 
 	constructor(private readonly o: AssistantOptions) {
 		this.now = o.now ?? (() => new Date());
 		this.log = o.log ?? (() => {});
+		this.telemetry = o.telemetry ?? disabledTelemetry();
 	}
 
 	private conversation(device: string): Conversation {
 		const t = this.now().getTime();
 		let c = this.conversations.get(device);
 		if (!c || t - c.touchedAt > CONVERSATION_IDLE_MS) {
-			c = { messages: [], touchedAt: t, pending: null, language: this.o.language };
+			c = { sessionId: randomUUID(), messages: [], touchedAt: t, pending: null, language: this.o.language };
 			this.conversations.set(device, c);
 		}
 		c.touchedAt = t;
@@ -147,85 +152,119 @@ export class Assistant {
 	async turn(device: string, input: Input, emit: Emit): Promise<void> {
 		const c = this.conversation(device);
 		let heard = (input.text ?? '').trim();
-		try {
-			if (input.audio) {
-				const said = await this.o.stt.transcribe(input.audio.bytes, input.audio.mime);
-				heard = said.text;
-				if (said.language) {
-					c.language = said.language;
-					this.log(`[${device}] language heard: ${said.language}`);
+		return this.telemetry.run(
+			'ontoplano-turn',
+			'agent',
+			{ sessionId: c.sessionId, input: heard || '[audio]' },
+			async (span) => {
+				const tracedEmit: Emit = (event) => {
+					if (event.type === 'reply') span.update({ output: event.text });
+					if (event.type === 'confirm') span.update({ output: { confirmation: event.question, tool: event.name } });
+					if (event.type === 'error') span.update({ level: 'ERROR', statusMessage: event.message });
+					emit(event);
+				};
+				try {
+					if (input.audio) {
+						const said = await this.o.stt.transcribe(input.audio.bytes, input.audio.mime);
+						heard = said.text;
+						if (said.language) {
+							c.language = said.language;
+							this.log(`[${device}] language heard: ${said.language}`);
+						}
+						tracedEmit({ type: 'transcript', text: heard });
+						span.update({ input: { sessionId: c.sessionId, input: heard } });
+						if (!heard) {
+							tracedEmit({ type: 'error', message: 'nothing-heard' });
+							tracedEmit({ type: 'done' });
+							return;
+						}
+					}
+					this.log(`[${device}] heard: ${heard}`);
+					if (!heard) {
+						tracedEmit({ type: 'error', message: 'nothing-said' });
+						tracedEmit({ type: 'done' });
+						return;
+					}
+					if (c.pending) {
+						const answer = yesOrNo(heard, c.language);
+						if (answer !== null) return this.resume(device, c.pending.id, answer, tracedEmit);
+						// Something else was said: the question lapses and the new thing is heard.
+						c.pending = null;
+					}
+					const messages: Message[] = [
+						this.system(c.language),
+						...this.recentContext(c),
+						{ role: 'user', content: heard }
+					];
+					await this.run(device, c, messages, 0, [], heard, tracedEmit);
+				} catch (e) {
+					tracedEmit({ type: 'error', message: (e as Error).message });
+					this.o.history.append({
+						at: this.now().toISOString(),
+						device,
+						heard,
+						reply: '',
+						actions: [],
+						error: (e as Error).message
+					});
+					tracedEmit({ type: 'done' });
 				}
-				emit({ type: 'transcript', text: heard });
-				if (!heard) {
-					emit({ type: 'error', message: 'nothing-heard' });
-					emit({ type: 'done' });
-					return;
-				}
 			}
-			this.log(`[${device}] heard: ${heard}`);
-			if (!heard) {
-				emit({ type: 'error', message: 'nothing-said' });
-				emit({ type: 'done' });
-				return;
-			}
-			if (c.pending) {
-				const answer = yesOrNo(heard, c.language);
-				if (answer !== null) return this.resume(device, c.pending.id, answer, emit);
-				// Something else was said: the question lapses and the new thing is heard.
-				c.pending = null;
-			}
-			const messages: Message[] = [this.system(c.language), ...this.recentContext(c), { role: 'user', content: heard }];
-			await this.run(device, c, messages, 0, [], heard, emit);
-		} catch (e) {
-			emit({ type: 'error', message: (e as Error).message });
-			this.o.history.append({
-				at: this.now().toISOString(),
-				device,
-				heard,
-				reply: '',
-				actions: [],
-				error: (e as Error).message
-			});
-			emit({ type: 'done' });
-		}
+		);
 	}
 
 	/** Answer a pending "are you sure?" — from a button, or from a yes/no said aloud. */
 	async resume(device: string, id: string, yes: boolean, emit: Emit): Promise<void> {
 		const c = this.conversation(device);
-		const p = c.pending;
-		if (!p || p.id !== id) {
-			emit({ type: 'error', message: 'nothing-pending' });
-			emit({ type: 'done' });
-			return;
-		}
-		c.pending = null;
-		try {
-			const messages = [...p.messages];
-			const actions = [...p.actions];
-			if (yes) {
-				const ran = await this.perform(p.call, emit);
-				actions.push(ran.record);
-				messages.push(ran.message);
-			} else {
-				actions.push({ name: p.call.name, args: p.call.args, ok: false, summary: 'declined', link: null });
-				messages.push({ role: 'tool', tool_call_id: p.call.id, content: 'The person declined; this was NOT done.' });
+		return this.telemetry.run(
+			'ontoplano-confirmation',
+			'agent',
+			{ sessionId: c.sessionId, confirmationId: id, approved: yes },
+			async (span) => {
+				const tracedEmit: Emit = (event) => {
+					if (event.type === 'reply') span.update({ output: event.text });
+					if (event.type === 'error') span.update({ level: 'ERROR', statusMessage: event.message });
+					emit(event);
+				};
+				const p = c.pending;
+				if (!p || p.id !== id) {
+					tracedEmit({ type: 'error', message: 'nothing-pending' });
+					tracedEmit({ type: 'done' });
+					return;
+				}
+				c.pending = null;
+				try {
+					const messages = [...p.messages];
+					const actions = [...p.actions];
+					if (yes) {
+						const ran = await this.perform(p.call, tracedEmit);
+						actions.push(ran.record);
+						messages.push(ran.message);
+					} else {
+						actions.push({ name: p.call.name, args: p.call.args, ok: false, summary: 'declined', link: null });
+						messages.push({
+							role: 'tool',
+							tool_call_id: p.call.id,
+							content: 'The person declined; this was NOT done.'
+						});
+					}
+					const stopped = await this.runCalls(device, c, p.rest, messages, p.round, actions, p.heard, tracedEmit);
+					if (stopped) return;
+					await this.run(device, c, messages, p.round + 1, actions, p.heard, tracedEmit);
+				} catch (e) {
+					tracedEmit({ type: 'error', message: (e as Error).message });
+					this.o.history.append({
+						at: this.now().toISOString(),
+						device,
+						heard: p.heard,
+						reply: '',
+						actions: p.actions,
+						error: (e as Error).message
+					});
+					tracedEmit({ type: 'done' });
+				}
 			}
-			const stopped = await this.runCalls(device, c, p.rest, messages, p.round, actions, p.heard, emit);
-			if (stopped) return;
-			await this.run(device, c, messages, p.round + 1, actions, p.heard, emit);
-		} catch (e) {
-			emit({ type: 'error', message: (e as Error).message });
-			this.o.history.append({
-				at: this.now().toISOString(),
-				device,
-				heard: p.heard,
-				reply: '',
-				actions: p.actions,
-				error: (e as Error).message
-			});
-			emit({ type: 'done' });
-		}
+		);
 	}
 
 	/** The last turns, as the model should see them: no stale tool traffic, just what was said. */
@@ -252,7 +291,22 @@ export class Assistant {
 			const tools = final ? [] : this.llmTools();
 			const started = Date.now();
 			this.log(`[${device}] model: round ${r + 1}, ${tools.length} tools, ${messages.length} messages`);
-			const reply = await this.o.llm.chat(messages, tools);
+			const reply = await this.telemetry.run(
+				`model-round-${r + 1}`,
+				'generation',
+				{ messages, tools },
+				async (span) => {
+					span.update({ model: this.o.llm.model, metadata: { provider: this.o.llm.provider ?? 'unknown' } });
+					const answer = await this.o.llm.chat(messages, tools);
+					span.update({
+						output: { content: answer.content, toolCalls: answer.toolCalls },
+						...(answer.usage
+							? { usageDetails: { input: answer.usage.input, output: answer.usage.output, total: answer.usage.total } }
+							: {})
+					});
+					return answer;
+				}
+			);
 			const took = ((Date.now() - started) / 1000).toFixed(1);
 			if (reply.thinking) this.log(`[${device}] thinking (${took}s): ${oneLine(reply.thinking, LOG_THINKING_CHARS)}`);
 			if (reply.toolCalls.length)
@@ -301,7 +355,7 @@ export class Assistant {
 					expiresAt: this.now().getTime() + CONFIRMATION_TTL_MS
 				};
 				const question = confirmQuestion(call.name, call.args);
-				emit({ type: 'confirm', id, name: call.name, question });
+				emit({ type: 'confirm', id, name: call.name, args: call.args, question });
 				this.o.history.append({
 					at: this.now().toISOString(),
 					device,
@@ -322,34 +376,40 @@ export class Assistant {
 
 	/** One call, with its receipt. A tool the model was not offered is refused here, not sent on. */
 	private async perform(call: ToolCall, emit: Emit): Promise<{ record: ActionRecord; message: Message }> {
-		emit({ type: 'action', id: call.id, name: call.name, args: call.args, status: 'running' });
-		let result: ToolResult;
-		if (!this.isOffered(call.name)) {
-			result = { ok: false, text: `There is no tool called ${call.name}.`, structured: undefined };
-		} else {
-			try {
-				result = await this.o.mcp.call(call.name, call.args);
-			} catch (e) {
-				result = { ok: false, text: (e as Error).message, structured: undefined };
+		return this.telemetry.run(call.name, 'tool', { arguments: call.args }, async (span) => {
+			emit({ type: 'action', id: call.id, name: call.name, args: call.args, status: 'running' });
+			let result: ToolResult;
+			if (!this.isOffered(call.name)) {
+				result = { ok: false, text: `There is no tool called ${call.name}.`, structured: undefined };
+			} else {
+				try {
+					result = await this.o.mcp.call(call.name, call.args);
+				} catch (e) {
+					result = { ok: false, text: (e as Error).message, structured: undefined };
+				}
 			}
-		}
-		this.log(`  ${result.ok ? '✓' : '✗'} ${call.name}: ${oneLine(result.text, LOG_RESULT_CHARS)}`);
-		const receipt = describeAction(this.o.appUrl, call.name, call.args, result);
-		emit({
-			type: 'action',
-			id: call.id,
-			name: call.name,
-			args: call.args,
-			status: result.ok ? 'done' : 'failed',
-			summary: receipt.summary,
-			link: receipt.link
+			span.update({
+				output: result.structured ?? result.text,
+				...(result.ok ? {} : { level: 'ERROR' as const, statusMessage: result.text })
+			});
+			this.log(`  ${result.ok ? '✓' : '✗'} ${call.name}: ${oneLine(result.text, LOG_RESULT_CHARS)}`);
+			const receipt = describeAction(this.o.appUrl, call.name, call.args, result);
+			emit({
+				type: 'action',
+				id: call.id,
+				name: call.name,
+				args: call.args,
+				status: result.ok ? 'done' : 'failed',
+				summary: receipt.summary,
+				link: receipt.link
+			});
+			const content =
+				result.text.length > TOOL_RESULT_CHARS ? result.text.slice(0, TOOL_RESULT_CHARS) + '…' : result.text;
+			return {
+				record: { name: call.name, args: call.args, ok: result.ok, summary: receipt.summary, link: receipt.link },
+				message: { role: 'tool', tool_call_id: call.id, content: result.ok ? content : `Error: ${content}` }
+			};
 		});
-		const content =
-			result.text.length > TOOL_RESULT_CHARS ? result.text.slice(0, TOOL_RESULT_CHARS) + '…' : result.text;
-		return {
-			record: { name: call.name, args: call.args, ok: result.ok, summary: receipt.summary, link: receipt.link },
-			message: { role: 'tool', tool_call_id: call.id, content: result.ok ? content : `Error: ${content}` }
-		};
 	}
 
 	private async finish(

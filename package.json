@@ -14,11 +14,15 @@
 		"test": "vitest run && playwright test",
 		"test:unit": "vitest run",
 		"test:e2e": "playwright test",
-		"lint": "prettier --check . && eslint . && tsc --noEmit -p tsconfig.json",
+		"lint": "prettier --check . && eslint . && tsc --noEmit -p tsconfig.json && tsc -p eval/tsconfig.json",
 		"format": "prettier --write .",
 		"icons": "node scripts/make-icons.mjs"
 	},
 	"dependencies": {
+		"@langfuse/client": "^5.13.1",
+		"@langfuse/otel": "^5.13.1",
+		"@langfuse/tracing": "^5.13.1",
+		"@opentelemetry/sdk-node": "^0.223.0",
 		"smol-toml": "^1.3.1"
 	},
 	"devDependencies": {

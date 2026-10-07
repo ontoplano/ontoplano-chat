@@ -25,6 +25,7 @@ import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } 
 import { kokoroLanguageOf, kokoroVoiceFor, OLLAMA_INSTALL, PROVIDERS, SPEACHES_RUN } from './constants.js';
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
+import { langfuseTelemetry } from './observability.js';
 import { Devices } from './pairing.js';
 import { createHttpServer } from './server.js';
 import { Assistant } from './turn.js';
@@ -77,6 +78,10 @@ async function serve(): Promise<number> {
 	const engines = buildEngines(c, process.env, stamp);
 	const devices = new Devices(c.dataDir);
 	const history = new History(c.dataDir);
+	const telemetry = langfuseTelemetry(
+		process.env,
+		[c.ontoplano.token, c.llm.apiKey, c.stt.apiKey, c.tts.apiKey].filter((s): s is string => Boolean(s))
+	);
 	const assistant = new Assistant({
 		name: c.assistant.name,
 		language: c.assistant.language,
@@ -90,7 +95,8 @@ async function serve(): Promise<number> {
 		mcp: engines.mcp,
 		tools: () => engines.tools.current(),
 		history,
-		log: stamp
+		log: stamp,
+		telemetry
 	});
 	engines.tools.start();
 	const server = createHttpServer({ config: c, devices, assistant, history, engines, version: VERSION, log: stamp });
@@ -131,6 +137,7 @@ async function serve(): Promise<number> {
 		process.once('SIGINT', stop);
 		process.once('SIGTERM', stop);
 	});
+	await telemetry.shutdown();
 	return 0;
 }
 

@@ -1,0 +1,420 @@
+[
+	{
+		"name": "today",
+		"description": "Read what is on today before answering about the day.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": {} }
+	},
+	{
+		"name": "upcoming",
+		"description": "Read upcoming scheduled blocks.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "days": { "type": "integer", "default": 7 } } }
+	},
+	{
+		"name": "tasks",
+		"description": "List and find todos including IDs.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"archived": { "type": "string", "enum": ["exclude", "include", "only"] },
+				"completedSince": { "type": "string" },
+				"createdSince": { "type": "string" },
+				"direction": { "type": "string", "enum": ["asc", "desc"] },
+				"fields": { "type": "string" },
+				"ids": { "type": "array", "items": { "type": "integer" } },
+				"includeArchived": { "type": "boolean" },
+				"limit": { "type": "integer", "default": 50 },
+				"maxEase": { "type": "number", "minimum": 0, "maximum": 5 },
+				"maxInterest": { "type": "number", "minimum": 0, "maximum": 5 },
+				"maxUrgency": { "type": "number", "minimum": 0, "maximum": 5 },
+				"minEase": { "type": "number", "minimum": 0, "maximum": 5 },
+				"minInterest": { "type": "number", "minimum": 0, "maximum": 5 },
+				"minUrgency": { "type": "number", "minimum": 0, "maximum": 5 },
+				"notebookId": { "type": "integer" },
+				"offset": { "type": "integer", "default": 0 },
+				"query": { "type": "string" },
+				"scheduled": { "type": "string", "enum": ["any", "dated", "undated"] },
+				"scheduledFrom": { "type": "string" },
+				"scheduledTo": { "type": "string" },
+				"sort": {
+					"type": "string",
+					"enum": ["completed", "created", "manual", "priority", "scheduled", "title", "updated"]
+				},
+				"status": { "type": "string", "enum": ["closed", "doing", "done", "open", "skipped", "todo"] },
+				"taggedSince": { "type": "string" },
+				"tagMode": { "type": "string", "enum": ["all", "any"] },
+				"tags": { "type": "array", "items": { "type": "string" } },
+				"updatedSince": { "type": "string" },
+				"verbose": { "type": "boolean" },
+				"withoutTags": { "type": "array", "items": { "type": "string" } }
+			}
+		}
+	},
+	{
+		"name": "add_task",
+		"description": "Create a todo. Omit scheduledDate unless a date was requested.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"attributes": { "type": "object", "additionalProperties": { "type": "string" } },
+				"goalId": { "type": "integer" },
+				"notebookId": { "type": "integer" },
+				"notes": { "type": "string" },
+				"requestId": { "type": "string" },
+				"scheduledDate": { "type": "string" },
+				"tags": { "type": "string" },
+				"title": { "type": "string" }
+			},
+			"required": ["title"]
+		}
+	},
+	{
+		"name": "finish_task",
+		"description": "Mark a todo done by ID.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "change_task",
+		"description": "Change a todo title, notes or status by ID.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"attributes": { "type": "object", "additionalProperties": { "type": "string" } },
+				"ease": { "type": "integer" },
+				"id": { "type": "integer" },
+				"ifUpdatedAt": { "type": "string" },
+				"interest": { "type": "integer" },
+				"notebookId": { "type": "integer" },
+				"notes": { "type": "string" },
+				"status": { "type": "string", "enum": ["doing", "done", "skipped", "todo"] },
+				"tags": { "type": "string" },
+				"title": { "type": "string" },
+				"urgency": { "type": "integer" }
+			},
+			"required": ["id"]
+		}
+	},
+	{
+		"name": "schedule_task",
+		"description": "Put an existing todo on a date.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": { "date": { "type": "string" }, "id": { "type": "integer" } },
+			"required": ["date", "id"]
+		}
+	},
+	{
+		"name": "unschedule_task",
+		"description": "Remove the date from an existing todo.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "reopen_task",
+		"description": "Reopen a completed todo.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "add_block",
+		"description": "Add a one-off timed block on a date.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"attributes": { "type": "object", "additionalProperties": { "type": "string" } },
+				"category": { "type": "string" },
+				"date": { "type": "string" },
+				"ease": { "type": "integer" },
+				"interest": { "type": "integer" },
+				"minutes": { "type": "integer", "default": 60 },
+				"notebookId": { "type": "integer" },
+				"requestId": { "type": "string" },
+				"start_time": { "type": "string" },
+				"title": { "type": "string" },
+				"urgency": { "type": "integer" }
+			},
+			"required": ["date", "start_time", "title"]
+		}
+	},
+	{
+		"name": "change_block",
+		"description": "Change a dated block.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"attributes": { "type": "object", "additionalProperties": { "type": "string" } },
+				"category": { "type": "string" },
+				"date": { "type": "string" },
+				"id": { "type": "string" },
+				"minutes": { "type": "integer" },
+				"notebookId": { "type": "integer" },
+				"start_time": { "type": "string" },
+				"title": { "type": "string" }
+			},
+			"required": ["id"]
+		}
+	},
+	{
+		"name": "goals",
+		"description": "List goals.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "includeClosed": { "type": "boolean", "default": false } } }
+	},
+	{
+		"name": "add_goal",
+		"description": "Create a goal with a horizon.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"area": { "type": "string" },
+				"horizon": { "type": "string" },
+				"notebookId": { "type": "integer" },
+				"notes": { "type": "string" },
+				"requestId": { "type": "string" },
+				"startDate": { "type": "string" },
+				"targets": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"measure": { "type": "string", "required": false },
+							"unit": { "type": "string", "required": false },
+							"value": { "type": "number", "required": true }
+						}
+					}
+				},
+				"targetValue": { "type": "number" },
+				"title": { "type": "string" },
+				"unit": { "type": "string" }
+			},
+			"required": ["horizon", "title"]
+		}
+	},
+	{
+		"name": "log_goal_progress",
+		"description": "Record progress on an existing goal.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"delta": { "type": "number" },
+				"id": { "type": "integer" },
+				"requestId": { "type": "string" },
+				"unit": { "type": "string" },
+				"value": { "type": "number" }
+			},
+			"required": ["id"]
+		}
+	},
+	{
+		"name": "workouts",
+		"description": "List workout definitions.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": { "include_archived": { "type": "boolean" }, "notebookId": { "type": "integer" } }
+		}
+	},
+	{
+		"name": "workout_sessions",
+		"description": "List workout sessions.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"limit": { "type": "integer", "default": 50 },
+				"offset": { "type": "integer", "default": 0 },
+				"since": { "type": "string" },
+				"workout_id": { "type": "integer" }
+			}
+		}
+	},
+	{
+		"name": "log_workout",
+		"description": "Log a workout session.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"done_on": { "type": "string" },
+				"measures": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"activity": { "type": "string", "required": true },
+							"amount": { "type": "number", "required": false },
+							"unit": { "type": "string", "required": false }
+						}
+					}
+				},
+				"notes": { "type": "string" },
+				"requestId": { "type": "string" },
+				"workout_id": { "type": "integer" }
+			},
+			"required": ["workout_id"]
+		}
+	},
+	{
+		"name": "shopping_list",
+		"description": "Read shopping items.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": { "notebookId": { "type": "integer" }, "short": { "type": "boolean" } }
+		}
+	},
+	{
+		"name": "add_inventory_item",
+		"description": "Add an inventory or wishlist item.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"name": { "type": "string" },
+				"notebookId": { "type": "integer" },
+				"notes": { "type": "string" },
+				"requestId": { "type": "string" },
+				"section": { "type": "string" },
+				"type": { "type": "string", "enum": ["replenish", "someday"], "default": "replenish" }
+			},
+			"required": ["name"]
+		}
+	},
+	{
+		"name": "tick_bought",
+		"description": "Mark a shopping item bought.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "notebooks",
+		"description": "List notebooks and IDs.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } } }
+	},
+	{
+		"name": "notebook_notes",
+		"description": "Read notes in a notebook.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"fields": { "type": "string" },
+				"id": { "type": "integer" },
+				"includeArchived": { "type": "boolean" },
+				"limit": { "type": "integer", "default": 50 },
+				"offset": { "type": "integer", "default": 0 },
+				"taggedSince": { "type": "string" },
+				"tagMode": { "type": "string", "enum": ["all", "any"] },
+				"tags": { "type": "array", "items": { "type": "string" } },
+				"verbose": { "type": "boolean" },
+				"withoutTags": { "type": "array", "items": { "type": "string" } }
+			},
+			"required": ["id"]
+		}
+	},
+	{
+		"name": "write_entry",
+		"description": "Write a note.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"content": { "type": "string" },
+				"notebookId": { "type": "integer" },
+				"requestId": { "type": "string" },
+				"tags": { "type": "string" },
+				"title": { "type": "string" }
+			},
+			"required": ["content"]
+		}
+	},
+	{
+		"name": "search",
+		"description": "Search across the app.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] }
+	},
+	{
+		"name": "remove_notebook",
+		"description": "Permanently remove a notebook; requires confirmation.",
+		"writes": true,
+		"destroys": true,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "drop_task",
+		"description": "Permanently drop a todo; requires confirmation.",
+		"writes": true,
+		"destroys": true,
+		"inputSchema": { "type": "object", "properties": { "id": { "type": "integer" } }, "required": ["id"] }
+	},
+	{
+		"name": "repeating_week",
+		"description": "Read repeating weekly blocks before changing a recurring plan.",
+		"writes": false,
+		"destroys": false,
+		"inputSchema": { "type": "object", "properties": { "notebookId": { "type": "integer" } } }
+	},
+	{
+		"name": "add_repeating_block",
+		"description": "Create a repeating scheduled block with weekday, start time and duration.",
+		"writes": true,
+		"destroys": false,
+		"inputSchema": {
+			"type": "object",
+			"properties": {
+				"attributes": { "type": "object", "additionalProperties": { "type": "string" } },
+				"category": { "type": "string" },
+				"ease": { "type": "integer" },
+				"every": { "type": "integer" },
+				"interest": { "type": "integer" },
+				"minutes": { "type": "integer", "default": 60 },
+				"month_day": { "type": "integer" },
+				"notebookId": { "type": "integer" },
+				"remind_minutes": { "type": "integer" },
+				"repeats": { "type": "string", "enum": ["every_n_days", "every_n_weeks", "monthly", "weekly"] },
+				"requestId": { "type": "string" },
+				"start_time": { "type": "string" },
+				"title": { "type": "string" },
+				"urgency": { "type": "integer" },
+				"weekday": { "type": "integer" }
+			},
+			"required": ["start_time", "weekday"]
+		}
+	}
+]

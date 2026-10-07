@@ -175,4 +175,18 @@ make test     # vitest, then Playwright at phone and desktop width with fake eng
 make lint     # prettier, eslint, tsc
 ```
 
+### Agent traces
+
+Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` in the service environment to enable Langfuse. `LANGFUSE_BASE_URL` selects a self-hosted or regional endpoint; without it the SDK uses Langfuse Cloud's default. Without both keys, tracing is off and the assistant works normally. The server flushes traces on shutdown. An unavailable Langfuse endpoint does not gate a reply.
+
+One interaction is an agent observation, with child observations for each model generation and each client-side MCP call. The trace includes a random conversation session ID, input, output, model name, model server hostname, call arguments and results, failures, and provider-reported token usage. Confirmation creates a separate interaction in the same conversation; it never executes the destructive tool before approval. Langfuse may calculate cost for a model it knows. No cost is invented for unknown or local models.
+
+Trace content may contain private task and note text. Use a Langfuse instance you trust. `src/observability.ts` is the single redaction policy: it removes credential-named fields, Bearer values, common key shapes, and configured app, model, speech, and Langfuse keys before export. Extend `redact()` for any additional private patterns in your deployment. Do not put secrets into tool names or model names.
+
+### Agent evaluations
+
+`make eval` runs 29 synthetic cases through the real model and agent loop. It never loads your Ontoplano config, token, MCP server, or account. A fresh in-memory synthetic tool backend and temporary turn history are used for each case, and the runner has no Ontoplano MCP HTTP client. The model defaults to `http://127.0.0.1:11434/v1` and `qwen2.5:7b`; set `EVAL_MODEL_URL`, `EVAL_MODEL_NAME`, and optionally `EVAL_MODEL_API_KEY` to test another OpenAI-compatible model. The model endpoint is the only network target. `make eval-check` validates the case list and tool definitions without contacting a model.
+
+Cases live in `eval/cases.ts`; tool definitions in `eval/tools.json` are a curated snapshot of the actual Ontoplano MCP manifest. Run `node scripts/update-eval-tools.mjs` beside the app checkout to refresh schemas and mutation flags; review the descriptions and cases after a contract change. A case names expected calls in order, important argument values, forbidden calls, whether a mutation or confirmation is expected, and optional required answer concepts. `eval/evaluate.ts` scores selection, argument values, completion, and unsafe mutations deterministically. Completion requires the expected calls to succeed, a nonempty answer, and any required answer concepts; a confirmation case must stop before executing. This is a behavioral proxy, not a semantic judge. Latency is measured around the turn; tokens are reported only when the model API supplies usage. For a priced model, set `EVAL_INPUT_USD_PER_MILLION` and `EVAL_OUTPUT_USD_PER_MILLION` to show an estimated USD cost. The command exits nonzero if any case fails. Failure details remain in the per-case PASS/FAIL output and traces when Langfuse is enabled. `make eval-langfuse` runs the same cases as a Langfuse local-data experiment with item-level scores; it requires the Langfuse keys and sends synthetic case inputs and outputs to that instance.
+
 See `AGENTS.md` for how the code is laid out and what a change owes.
