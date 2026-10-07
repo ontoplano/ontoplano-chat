@@ -459,9 +459,13 @@ function speak(text) {
 	speechSynthesis.cancel();
 	const u = new SpeechSynthesisUtterance(text);
 	u.lang = state.me.assistant.language;
-	const voice = speechSynthesis
-		.getVoices()
-		.find((v) => v.lang.toLowerCase().startsWith(u.lang.toLowerCase().split('-')[0]) && v.localService);
+	const voices = speechSynthesis.getVoices();
+	const tag = u.lang.toLowerCase();
+	const family = tag.split('-')[0];
+	const voice =
+		voices.find((v) => v.lang.toLowerCase() === tag && v.localService) ??
+		voices.find((v) => v.lang.toLowerCase() === tag) ??
+		voices.find((v) => v.lang.toLowerCase().startsWith(family) && v.localService);
 	if (voice) u.voice = voice;
 	u.onstart = voiceStarted;
 	u.onend = voiceEnded;
