@@ -26,6 +26,17 @@ const MODEL_TIMEOUT_MS = 120_000;
 const MODEL_MAX_ROUNDS = 6;
 const HISTORY_TURNS = 4;
 type Row = { id: string; score: ReturnType<typeof evaluate>; result: Outcome };
+
+function selectedCases(): EvalCase[] {
+	const requested = process.env.EVAL_CASES?.split(',')
+		.map((id) => id.trim())
+		.filter(Boolean);
+	if (!requested?.length) return cases;
+	const selected = requested.map((id) => cases.find((test) => test.id === id));
+	if (selected.some((test) => !test))
+		throw new Error(`Unknown eval case: ${requested.filter((id) => !cases.some((test) => test.id === id)).join(', ')}`);
+	return selected as EvalCase[];
+}
 const safeText = (value: string): string =>
 	String(
 		redact(value, [
@@ -215,6 +226,7 @@ async function runCase(test: EvalCase, llm: Llm, telemetry: Telemetry, onStep: (
 
 async function main(): Promise<void> {
 	validate();
+	const chosen = selectedCases();
 	if (process.argv.includes('--check')) {
 		console.log(
 			`Validated ${cases.length} cases and ${tools.length} real MCP tool definitions; no model or app contacted.`
@@ -232,7 +244,9 @@ async function main(): Promise<void> {
 	console.log(
 		`Langfuse:       ${process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY ? `${displayUrl(langfuseUrl)} (${process.argv.includes('--langfuse') ? 'experiment and traces' : 'traces'})` : 'disabled (keys not set)'}`
 	);
-	console.log(`Cases:          ${cases.length}\n`);
+	console.log(
+		`Cases:          ${chosen.length}${chosen.length !== cases.length ? ` selected from ${cases.length}` : ''}\n`
+	);
 	const llm = openAiLlm({
 		url: MODEL_URL.replace(/\/$/, ''),
 		model: MODEL_NAME,
@@ -250,11 +264,11 @@ async function main(): Promise<void> {
 	const telemetry = langfuseTelemetry(process.env, [process.env.EVAL_MODEL_API_KEY ?? ''].filter(Boolean));
 	const rows: Row[] = [];
 	const runAndReport = async (test: EvalCase): Promise<Row> => {
-		const ordinal = String(cases.findIndex((item) => item.id === test.id) + 1).padStart(
-			String(cases.length).length,
+		const ordinal = String(chosen.findIndex((item) => item.id === test.id) + 1).padStart(
+			String(chosen.length).length,
 			'0'
 		);
-		console.log(`[${ordinal}/${cases.length}] ${test.id}: ${test.input}`);
+		console.log(`[${ordinal}/${chosen.length}] ${test.id}: ${test.input}`);
 		const started = performance.now();
 		let row: Row;
 		try {
@@ -288,7 +302,7 @@ async function main(): Promise<void> {
 			const client = new LangfuseClient();
 			await client.experiment.run({
 				name: `ontoplano-chat ${MODEL_NAME}`,
-				data: cases.map((test) => ({ input: test })),
+				data: chosen.map((test) => ({ input: test })),
 				maxConcurrency: 1,
 				task: async ({ input }) => runAndReport(input as EvalCase),
 				evaluators: [
@@ -306,7 +320,7 @@ async function main(): Promise<void> {
 				]
 			});
 		} else {
-			for (const test of cases) await runAndReport(test);
+			for (const test of chosen) await runAndReport(test);
 		}
 	} finally {
 		await telemetry.shutdown();
