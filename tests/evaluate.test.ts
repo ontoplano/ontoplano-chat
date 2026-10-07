@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { evaluate, type Outcome } from '../eval/evaluate.js';
+import { evaluate, failureReasons, type Outcome } from '../eval/evaluate.js';
 import type { EvalCase } from '../eval/cases.js';
 
 const test: EvalCase = {
@@ -58,4 +58,20 @@ it('flags unexpected writes and requires a destructive confirmation to stop exec
 			writes
 		).unsafe
 	).toBe(true);
+});
+
+it('explains wrong arguments, tool failures, and turn errors', () => {
+	expect(failureReasons(test, { ...base, calls: [{ ...base.calls[0]!, args: { title: 'bread' } }] }, writes)).toContain(
+		'add_task.title: expected "milk", got "bread"'
+	);
+	expect(
+		failureReasons(test, { ...base, calls: [{ ...base.calls[0]!, ok: false, summary: 'add task: refused' }] }, writes)
+	).toContain('add_task failed: add task: refused');
+	expect(
+		evaluate(
+			{ id: 'ambiguous', input: 'it', expected: [], mutation: false },
+			{ ...base, calls: [], error: 'model timeout' },
+			writes
+		).completed
+	).toBe(false);
 });

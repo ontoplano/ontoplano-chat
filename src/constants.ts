@@ -156,7 +156,7 @@ export const PROVIDERS: Provider[] = [
 		model: 'qwen3.5:9b',
 		local: true,
 		needsKey: false,
-		note: 'Everything stays here. The 7b model wants about 5 GB of memory; qwen2.5:3b is lighter, qwen2.5:14b better.'
+		note: 'Everything stays here. Pick a smaller model if this computer is short on memory.'
 	},
 	{
 		key: 'local',

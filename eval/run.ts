@@ -9,10 +9,10 @@ import { fakeStt, fakeTts } from '../src/fakes.js';
 import { History } from '../src/history.js';
 import { openAiLlm, type Llm } from '../src/llm.js';
 import { type McpTool, type ToolResult } from '../src/mcp.js';
-import { langfuseTelemetry, type Telemetry } from '../src/observability.js';
+import { langfuseTelemetry, redact, type Telemetry } from '../src/observability.js';
 import { Assistant, type ToolCaller, type TurnEvent } from '../src/turn.js';
 import { cases, type EvalCase } from './cases.js';
-import { evaluate, type ObservedCall, type Outcome } from './evaluate.js';
+import { evaluate, failureReasons, type ObservedCall, type Outcome, type Step } from './evaluate.js';
 
 type EvalTool = McpTool & { writes: boolean; destroys: boolean };
 const tools = JSON.parse(
@@ -26,6 +26,22 @@ const MODEL_TIMEOUT_MS = 120_000;
 const MODEL_MAX_ROUNDS = 6;
 const HISTORY_TURNS = 4;
 type Row = { id: string; score: ReturnType<typeof evaluate>; result: Outcome };
+const safeText = (value: string): string =>
+	String(
+		redact(value, [
+			process.env.EVAL_MODEL_API_KEY ?? '',
+			process.env.LANGFUSE_PUBLIC_KEY ?? '',
+			process.env.LANGFUSE_SECRET_KEY ?? ''
+		])
+	);
+function displayUrl(raw: string): string {
+	try {
+		const url = new URL(raw);
+		return safeText(`${url.origin}${url.pathname.replace(/\/$/, '')}`);
+	} catch {
+		return '(invalid URL)';
+	}
+}
 
 function validate(): void {
 	if (cases.length < 20 || cases.length > 30) throw new Error('Expected 20–30 evaluation cases');
@@ -83,22 +99,70 @@ class SyntheticMcp implements ToolCaller {
 	}
 }
 
-async function runCase(test: EvalCase, llm: Llm, telemetry: Telemetry): Promise<Row> {
+async function runCase(test: EvalCase, llm: Llm, telemetry: Telemetry, onStep: (step: Step) => void): Promise<Row> {
 	const dir = mkdtempSync(join(tmpdir(), 'ontoplano-chat-eval-'));
 	try {
 		const calls: ObservedCall[] = [];
+		const steps: Step[] = [];
+		let modelRounds = 0;
+		const recordStep = (step: Step): void => {
+			steps.push(step);
+			onStep(step);
+		};
 		let tokens: Outcome['tokens'];
 		const countedLlm: Llm = {
 			...llm,
 			async chat(messages, offered) {
-				const reply = await llm.chat(messages, offered);
-				if (reply.usage)
-					tokens = {
-						input: (tokens?.input ?? 0) + reply.usage.input,
-						output: (tokens?.output ?? 0) + reply.usage.output,
-						total: (tokens?.total ?? 0) + reply.usage.total
-					};
-				return reply;
+				const name = `round ${++modelRounds}`;
+				const started = performance.now();
+				try {
+					const reply = await llm.chat(messages, offered);
+					if (reply.usage)
+						tokens = {
+							input: (tokens?.input ?? 0) + reply.usage.input,
+							output: (tokens?.output ?? 0) + reply.usage.output,
+							total: (tokens?.total ?? 0) + reply.usage.total
+						};
+					recordStep({
+						kind: 'model',
+						name,
+						durationMs: performance.now() - started,
+						detail: reply.toolCalls.length
+							? `requested ${reply.toolCalls.map((call) => call.name).join(', ')}`
+							: 'final answer'
+					});
+					return reply;
+				} catch (error) {
+					recordStep({
+						kind: 'model',
+						name,
+						durationMs: performance.now() - started,
+						detail: `failed: ${(error as Error).message}`
+					});
+					throw error;
+				}
+			}
+		};
+		const synthetic = new SyntheticMcp();
+		const monitoredMcp: ToolCaller = {
+			async call(name, args) {
+				const started = performance.now();
+				try {
+					const result = await synthetic.call(name, args);
+					const durationMs = performance.now() - started;
+					const call = [...calls].reverse().find((item) => item.name === name && item.durationMs === undefined);
+					if (call) call.durationMs = durationMs;
+					recordStep({ kind: 'tool', name, durationMs, detail: result.ok ? 'ok' : `failed: ${result.text}` });
+					return result;
+				} catch (error) {
+					recordStep({
+						kind: 'tool',
+						name,
+						durationMs: performance.now() - started,
+						detail: `failed: ${(error as Error).message}`
+					});
+					throw error;
+				}
 			}
 		};
 		const assistant = new Assistant({
@@ -111,20 +175,24 @@ async function runCase(test: EvalCase, llm: Llm, telemetry: Telemetry): Promise<
 			llm: countedLlm,
 			stt: fakeStt,
 			tts: fakeTts,
-			mcp: new SyntheticMcp(),
+			mcp: monitoredMcp,
 			tools: () => tools,
 			history: new History(dir),
 			telemetry
 		});
 		let answer = '';
 		let confirmed = false;
+		let error: string | undefined;
 		const started = performance.now();
 		await assistant.turn(`eval-${test.id}`, { text: test.input }, (event: TurnEvent) => {
 			if (event.type === 'action' && event.status === 'running')
 				calls.push({ name: event.name, args: event.args, executed: true });
 			if (event.type === 'action' && event.status !== 'running') {
 				const call = [...calls].reverse().find((item) => item.name === event.name && item.ok === undefined);
-				if (call) call.ok = event.status === 'done';
+				if (call) {
+					call.ok = event.status === 'done';
+					call.summary = event.summary;
+				}
 			}
 			if (event.type === 'confirm') {
 				calls.push({ name: event.name, args: event.args, executed: false });
@@ -132,9 +200,12 @@ async function runCase(test: EvalCase, llm: Llm, telemetry: Telemetry): Promise<
 				answer = event.question;
 			}
 			if (event.type === 'reply') answer = event.text;
-			if (event.type === 'error') answer = `Error: ${event.message}`;
+			if (event.type === 'error') {
+				error = event.message;
+				answer = '';
+			}
 		});
-		const result: Outcome = { calls, answer, confirmed, latencyMs: performance.now() - started, tokens };
+		const result: Outcome = { calls, answer, confirmed, error, steps, latencyMs: performance.now() - started, tokens };
 		const score = evaluate(test, result, writes);
 		return { id: test.id, score, result };
 	} finally {
@@ -153,16 +224,63 @@ async function main(): Promise<void> {
 	const url = new URL(MODEL_URL);
 	if (!['http:', 'https:'].includes(url.protocol)) throw new Error('EVAL_MODEL_URL must be HTTP(S)');
 	if (url.username || url.password) throw new Error('EVAL_MODEL_URL must not contain credentials');
+	const modelEndpoint = displayUrl(MODEL_URL);
+	const langfuseUrl = process.env.LANGFUSE_BASE_URL ?? 'https://cloud.langfuse.com';
+	console.log(`Model:          ${MODEL_NAME}`);
+	console.log(`Model endpoint: ${modelEndpoint} (GET /models, POST /chat/completions)`);
+	console.log('Ontoplano MCP: synthetic in memory; no Ontoplano config, token, or server is used');
+	console.log(
+		`Langfuse:       ${process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY ? `${displayUrl(langfuseUrl)} (${process.argv.includes('--langfuse') ? 'experiment and traces' : 'traces'})` : 'disabled (keys not set)'}`
+	);
+	console.log(`Cases:          ${cases.length}\n`);
 	const llm = openAiLlm({
 		url: MODEL_URL.replace(/\/$/, ''),
 		model: MODEL_NAME,
 		apiKey: process.env.EVAL_MODEL_API_KEY,
 		timeoutMs: MODEL_TIMEOUT_MS
 	});
+	console.log('Checking model availability…');
+	const probeStarted = performance.now();
 	const problem = await llm.check();
-	if (problem) throw new Error(`Evaluation model unavailable: ${problem}`);
+	if (problem)
+		throw new Error(
+			`Model check failed after ${((performance.now() - probeStarted) / 1000).toFixed(1)}s at ${modelEndpoint}: ${safeText(problem)}`
+		);
+	console.log(`Model ready in ${((performance.now() - probeStarted) / 1000).toFixed(1)}s\n`);
 	const telemetry = langfuseTelemetry(process.env, [process.env.EVAL_MODEL_API_KEY ?? ''].filter(Boolean));
 	const rows: Row[] = [];
+	const runAndReport = async (test: EvalCase): Promise<Row> => {
+		const ordinal = String(cases.findIndex((item) => item.id === test.id) + 1).padStart(
+			String(cases.length).length,
+			'0'
+		);
+		console.log(`[${ordinal}/${cases.length}] ${test.id}: ${test.input}`);
+		const started = performance.now();
+		let row: Row;
+		try {
+			row = await runCase(test, llm, telemetry, (step) =>
+				console.log(`  ${step.kind} ${step.name}: ${(step.durationMs / 1000).toFixed(2)}s — ${safeText(step.detail)}`)
+			);
+		} catch (error) {
+			const result: Outcome = {
+				calls: [],
+				answer: '',
+				confirmed: false,
+				error: (error as Error).message,
+				latencyMs: performance.now() - started
+			};
+			row = { id: test.id, result, score: evaluate(test, result, writes) };
+		}
+		rows.push(row);
+		console.log(`  ${row.score.completed ? 'PASS' : 'FAIL'} in ${(row.result.latencyMs / 1000).toFixed(2)}s`);
+		if (!row.score.completed) {
+			for (const reason of failureReasons(test, row.result, writes)) console.log(`  reason: ${safeText(reason)}`);
+			console.log(
+				`  observed: ${safeText(row.result.calls.map((call) => `${call.name}(${JSON.stringify(call.args)}) ${call.executed ? (call.ok ? 'ok' : 'failed') : 'awaiting confirmation'}`).join(' → ') || '(no tool calls)')}`
+			);
+		}
+		return row;
+	};
 	try {
 		if (process.argv.includes('--langfuse')) {
 			if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY)
@@ -172,12 +290,7 @@ async function main(): Promise<void> {
 				name: `ontoplano-chat ${MODEL_NAME}`,
 				data: cases.map((test) => ({ input: test })),
 				maxConcurrency: 1,
-				task: async ({ input }) => {
-					const row = await runCase(input as EvalCase, llm, telemetry);
-					rows.push(row);
-					console.log(`${row.score.completed ? 'PASS' : 'FAIL'} ${row.id}`);
-					return row;
-				},
+				task: async ({ input }) => runAndReport(input as EvalCase),
 				evaluators: [
 					async ({ output }) => {
 						const score = (output as Row).score;
@@ -193,13 +306,7 @@ async function main(): Promise<void> {
 				]
 			});
 		} else {
-			for (const test of cases) {
-				const row = await runCase(test, llm, telemetry);
-				rows.push(row);
-				console.log(
-					`${row.score.completed ? 'PASS' : 'FAIL'} ${row.id}${row.score.unsafe ? ' (unsafe mutation)' : ''}`
-				);
-			}
+			for (const test of cases) await runAndReport(test);
 		}
 	} finally {
 		await telemetry.shutdown();
@@ -220,9 +327,8 @@ async function main(): Promise<void> {
 	if (measured.length) {
 		const input = measured.reduce((sum, row) => sum + row.result.tokens!.input, 0);
 		const output = measured.reduce((sum, row) => sum + row.result.tokens!.output, 0);
-		console.log(
-			`Total tokens:                ${input + output} (${measured.length}/${rows.length} cases reported usage)`
-		);
+		const total = measured.reduce((sum, row) => sum + row.result.tokens!.total, 0);
+		console.log(`Total tokens:                ${total} (${measured.length}/${rows.length} cases reported usage)`);
 		const inputPrice = Number(process.env.EVAL_INPUT_USD_PER_MILLION);
 		const outputPrice = Number(process.env.EVAL_OUTPUT_USD_PER_MILLION);
 		if (inputPrice > 0 && outputPrice > 0)
@@ -234,6 +340,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-	console.error((error as Error).message);
+	console.error(safeText((error as Error).message));
 	process.exitCode = 1;
 });
