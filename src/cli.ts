@@ -86,7 +86,11 @@ async function serve(): Promise<number> {
 	const devices = new Devices(c.dataDir);
 	const history = new History(c.dataDir);
 	const telemetry = langfuseTelemetry(
-		process.env,
+		{
+			LANGFUSE_PUBLIC_KEY: c.langfuse.publicKey,
+			LANGFUSE_SECRET_KEY: c.langfuse.secretKey,
+			LANGFUSE_BASE_URL: c.langfuse.baseUrl
+		},
 		[c.ontoplano.token, c.llm.apiKey, c.stt.apiKey, c.tts.apiKey].filter((s): s is string => Boolean(s))
 	);
 	const assistant = new Assistant({
@@ -113,6 +117,9 @@ async function serve(): Promise<number> {
 	});
 	stamp(`ontoplano-chat ${VERSION}${fake ? ' (fake engines)' : ''} listening on ${c.server.host}:${c.server.port}`);
 	stamp(`model ${engines.llm.model} at ${c.llm.url} · ears: ${engines.stt.about} · voice: ${engines.tts.about}`);
+	stamp(
+		`app ${engines.mcp instanceof OntoplanoMcp ? engines.mcp.endpoint : 'synthetic in memory'} · Langfuse ${c.langfuse.publicKey && c.langfuse.secretKey ? c.langfuse.baseUrl : 'disabled (keys missing)'}`
+	);
 	if (!devices.list().length) {
 		// A code setup or pair printed a moment ago is the one to keep; a second
 		// one here would silently replace it.
@@ -404,6 +411,7 @@ function currentChoices(c: Config): Partial<Choices> {
 	return {
 		appUrl: c.ontoplano.url,
 		token: c.ontoplano.token,
+		langfuse: c.langfuse,
 		provider,
 		llm: { url: c.llm.url, model: c.llm.model, apiKey: c.llm.apiKey },
 		stt: { kind: c.stt.kind, url: c.stt.url, model: c.stt.model, language: c.stt.language, apiKey: c.stt.apiKey },
@@ -543,8 +551,14 @@ export async function main(argv: string[]): Promise<number> {
 			return (await shell('systemctl --user stop ontoplano-chat')) ? 0 : 1;
 		case 'install-service':
 			return (await installService()) ? 0 : 1;
-		case 'langfuse-check':
-			return checkLangfuse();
+		case 'langfuse-check': {
+			const c = config();
+			return checkLangfuse({
+				LANGFUSE_PUBLIC_KEY: c.langfuse.publicKey,
+				LANGFUSE_SECRET_KEY: c.langfuse.secretKey,
+				LANGFUSE_BASE_URL: c.langfuse.baseUrl
+			});
+		}
 		case 'pair':
 			return pair();
 		case 'devices':

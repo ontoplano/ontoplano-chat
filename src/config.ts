@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
+import { langfuseSettings } from './langfuse-check.js';
 
 import {
 	CONFIG_RELATIVE,
@@ -39,6 +40,7 @@ export type Config = {
 		tls: { cert: string; key: string };
 	};
 	ontoplano: { url: string; token: string };
+	langfuse: { publicKey: string; secretKey: string; baseUrl: string };
 	llm: {
 		url: string;
 		model: string;
@@ -121,6 +123,7 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 			tls: { cert: '', key: '' }
 		},
 		ontoplano: { url: 'https://app.ontoplano.com', token: '' },
+		langfuse: { publicKey: '', secretKey: '', baseUrl: 'https://cloud.langfuse.com' },
 		llm: {
 			url: 'http://127.0.0.1:11434/v1',
 			model: 'qwen3.5:9b',
@@ -186,6 +189,7 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 	const server = section(t, 'server');
 	const tls = section(server, 'tls');
 	const onto = section(t, 'ontoplano');
+	const langfuse = section(t, 'langfuse');
 	const llm = section(t, 'llm');
 	const stt = section(t, 'stt');
 	const tts = section(t, 'tts');
@@ -207,6 +211,11 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 		ontoplano: {
 			url: normalizeUrl(str(onto, 'url', d.ontoplano.url)),
 			token: env.ONTOPLANO_MCP_TOKEN ?? str(onto, 'token', '')
+		},
+		langfuse: {
+			publicKey: env.LANGFUSE_PUBLIC_KEY ?? str(langfuse, 'public_key', ''),
+			secretKey: env.LANGFUSE_SECRET_KEY ?? str(langfuse, 'secret_key', ''),
+			baseUrl: normalizeUrl(env.LANGFUSE_BASE_URL ?? str(langfuse, 'base_url', d.langfuse.baseUrl))
 		},
 		llm: {
 			url: normalizeUrl(str(llm, 'url', d.llm.url)),
@@ -252,7 +261,14 @@ export function fromToml(text: string, env: NodeJS.ProcessEnv = process.env): Co
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 	const path = configPath(env);
 	const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
-	return fromToml(text, env);
+	const c = fromToml(text, env);
+	// Older installs may still have langfuse.env; TOML and explicit environment win.
+	const legacy = langfuseSettings(env);
+	if (!c.langfuse.publicKey) c.langfuse.publicKey = legacy.LANGFUSE_PUBLIC_KEY ?? '';
+	if (!c.langfuse.secretKey) c.langfuse.secretKey = legacy.LANGFUSE_SECRET_KEY ?? '';
+	if (c.langfuse.baseUrl === defaults(env).langfuse.baseUrl && legacy.LANGFUSE_BASE_URL && !env.LANGFUSE_BASE_URL)
+		c.langfuse.baseUrl = normalizeUrl(legacy.LANGFUSE_BASE_URL);
+	return c;
 }
 
 /**
@@ -328,6 +344,13 @@ url = "https://app.ontoplano.com"
 # An API token from Settings → AI & Integrations, with the scopes the
 # assistant may use. It never leaves this machine.
 token = ""
+
+[langfuse]
+# Optional tracing. Project keys: Langfuse → Project settings → API Keys.
+# For self-hosted Docker Compose on this computer, use http://127.0.0.1:3000.
+public_key = ""
+secret_key = ""
+base_url = "https://cloud.langfuse.com"
 
 [llm]
 # Any OpenAI-compatible chat endpoint with tool calling: Ollama, llama.cpp's

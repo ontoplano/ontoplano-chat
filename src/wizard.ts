@@ -36,6 +36,7 @@ import {
 export type Choices = {
 	appUrl: string;
 	token: string;
+	langfuse: { publicKey: string; secretKey: string; baseUrl: string };
 	provider: string;
 	llm: { url: string; model: string; apiKey: string };
 	stt: { kind: 'openai' | 'whispercpp' | 'browser'; url: string; model: string; language: string; apiKey: string };
@@ -108,6 +109,11 @@ key = ${quote(c.tls.key)}
 [ontoplano]
 url = ${quote(c.appUrl)}
 token = ${quote(c.token)}
+
+[langfuse]
+public_key = ${quote(c.langfuse.publicKey)}
+secret_key = ${quote(c.langfuse.secretKey)}
+base_url = ${quote(c.langfuse.baseUrl)}
 
 [llm]
 # ${PROVIDERS.find((p) => p.key === c.provider)?.name ?? c.provider}
@@ -200,6 +206,7 @@ function baseChoices(cur: Partial<Choices>): Choices {
 	return {
 		appUrl: cur.appUrl || 'https://app.ontoplano.com',
 		token: cur.token || '',
+		langfuse: cur.langfuse ?? { publicKey: '', secretKey: '', baseUrl: 'https://cloud.langfuse.com' },
 		provider: cur.provider || 'ollama',
 		// Copies, not the config's own objects: a step writes over them while the
 		// config's answers are still the defaults of the questions after it.

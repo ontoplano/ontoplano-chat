@@ -33,6 +33,14 @@ describe('config', () => {
 		expect(c.ontoplano.token).toBe('env');
 	});
 
+	it('reads Langfuse keys from TOML with environment overrides', () => {
+		const c = fromToml(
+			`[langfuse]\npublic_key = "pk-file"\nsecret_key = "sk-file"\nbase_url = "http://localhost:3000/"`,
+			{ ...env, LANGFUSE_SECRET_KEY: 'sk-env' }
+		);
+		expect(c.langfuse).toEqual({ publicKey: 'pk-file', secretKey: 'sk-env', baseUrl: 'http://localhost:3000' });
+	});
+
 	it('an address typed without a scheme is http', () => {
 		expect(normalizeUrl('127.0.0.1:7749')).toBe('http://127.0.0.1:7749');
 		expect(normalizeUrl('https://x.example/')).toBe('https://x.example');
