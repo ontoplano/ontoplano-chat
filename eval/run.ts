@@ -292,6 +292,7 @@ async function main(): Promise<void> {
 			console.log(
 				`  observed: ${safeText(row.result.calls.map((call) => `${call.name}(${JSON.stringify(call.args)}) ${call.executed ? (call.ok ? 'ok' : 'failed') : 'awaiting confirmation'}`).join(' → ') || '(no tool calls)')}`
 			);
+			if (row.result.answer) console.log(`  answer: ${safeText(row.result.answer)}`);
 		}
 		return row;
 	};
