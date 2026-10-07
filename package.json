@@ -1,8 +1,8 @@
 {
 	"name": "ontoplano-chat",
-	"version": "0.1.13",
+	"version": "0.1.14",
 	"private": true,
-	"description": "A local voice assistant that acts on ontoplano: a phone talks, a model on your own computer listens, answers and does.",
+	"description": "A voice and text assistant for Ontoplano using MCP tools and a configurable model API.",
 	"type": "module",
 	"packageManager": "yarn@1.22.22",
 	"bin": {

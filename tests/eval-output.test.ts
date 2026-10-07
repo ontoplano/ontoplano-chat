@@ -54,7 +54,7 @@ it('logs endpoints, timings and failure reasons without contacting an Ontoplano 
 		expect(output.text).toMatch(/FAIL in [\d.]+s/);
 		expect(output.text).toContain('reason: Expected tool sequence');
 		expect(output.text).toContain('answer: I cannot do that.');
-		expect(output.text).toContain('Cases:          2 selected from 29');
+		expect(output.text).toContain('Cases:          2 selected from 30');
 		expect(output.text).toContain('Cases:                       2');
 		expect(output.text).not.toContain('must-never-be-used');
 		expect(paths.every((path) => path === '/v1/models' || path === '/v1/chat/completions')).toBe(true);

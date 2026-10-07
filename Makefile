@@ -29,7 +29,7 @@ help:
 	@echo "  make langfuse-check    check the Langfuse URL and project keys"
 	@echo "  make langfuse-trace-test   send and verify a synthetic Langfuse trace"
 	@echo "  make test              unit tests, then the browser suite"
-	@echo "  make eval              run the 29-case agent evaluation against a model and synthetic app data"
+	@echo "  make eval              run the 30-case agent evaluation against a model and synthetic app data"
 	@echo "  make eval-langfuse     run the same cases as a Langfuse experiment"
 	@echo "  make eval-check        validate evaluation cases without contacting a model"
 	@echo "  make lint              prettier, eslint, tsc"

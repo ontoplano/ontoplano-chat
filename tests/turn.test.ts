@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIRM } from '../src/constants.js';
 import { FAKE_TOOLS, FakeOntoplano, fakeLlm, fakeStt, fakeTts } from '../src/fakes.js';
 import { History } from '../src/history.js';
+import type { Llm } from '../src/llm.js';
 import { offeredTools } from '../src/mcp.js';
 import { Assistant, yesOrNo, type TurnEvent } from '../src/turn.js';
 
@@ -79,6 +80,155 @@ describe('a turn', () => {
 		expect(reply).toMatchObject({ text: expect.stringContaining('5 tools available') });
 		expect(reply).toMatchObject({ text: expect.stringContaining('only an app call can confirm') });
 		expect(app.calls).toEqual([]);
+	});
+
+	it('retries a clear task creation with the available tool after a model refusal', async () => {
+		let calls = 0;
+		const toolSets: string[][] = [];
+		const scripted: Llm = {
+			model: 'synthetic-refusal',
+			async chat(_messages, tools) {
+				toolSets.push(tools.map((item) => item.function.name));
+				calls++;
+				if (calls === 1) return { content: 'I cannot create tasks.', toolCalls: [], raw: [], thinking: '' };
+				if (calls === 2) {
+					const raw = [
+						{
+							id: 'task-1',
+							type: 'function' as const,
+							function: { name: 'add_task', arguments: '{"title":"organizar arquivos"}' }
+						}
+					];
+					return {
+						content: '',
+						toolCalls: [{ id: 'task-1', name: 'add_task', args: { title: 'organizar arquivos' } }],
+						raw,
+						thinking: ''
+					};
+				}
+				return { content: 'Criei a tarefa.', toolCalls: [], raw: [], thinking: '' };
+			},
+			async check() {
+				return null;
+			},
+			async pull() {
+				return null;
+			},
+			async models() {
+				return [];
+			}
+		};
+		const focused = new Assistant({
+			name: 'Onto',
+			language: 'pt-BR',
+			appUrl: 'https://app.example',
+			confirm: DEFAULT_CONFIRM,
+			historyTurns: 3,
+			maxToolRounds: 4,
+			llm: scripted,
+			stt: fakeStt,
+			tts: fakeTts,
+			mcp: app,
+			tools: () => offeredTools(FAKE_TOOLS, OFFERED, 300),
+			history
+		});
+		const events = await collect((emit) =>
+			focused.turn('pixel', { text: 'cria uma task: organizar arquivos', speak: false }, emit)
+		);
+		expect(toolSets[1]).toEqual(['add_task']);
+		expect(app.calls.map((item) => item.name)).toEqual(['add_task']);
+		expect(events.find((event) => event.type === 'reply')).toMatchObject({ text: 'Criei a tarefa.' });
+	});
+
+	it('keeps explicit task tags and ratings when the model omits them', async () => {
+		const calls: { name: string; args: Record<string, unknown> }[] = [];
+		const scripted: Llm = {
+			model: 'synthetic-omission',
+			async chat() {
+				if (calls.length) return { content: 'Criei a tarefa.', toolCalls: [], raw: [], thinking: '' };
+				const args = { title: 'organizar arquivos' };
+				return {
+					content: '',
+					toolCalls: [{ id: 'task-1', name: 'add_task', args }],
+					raw: [{ id: 'task-1', type: 'function', function: { name: 'add_task', arguments: JSON.stringify(args) } }],
+					thinking: ''
+				};
+			},
+			async check() {
+				return null;
+			},
+			async pull() {
+				return null;
+			},
+			async models() {
+				return [];
+			}
+		};
+		const focused = new Assistant({
+			name: 'Onto',
+			language: 'pt-BR',
+			appUrl: 'https://app.example',
+			confirm: DEFAULT_CONFIRM,
+			historyTurns: 3,
+			maxToolRounds: 4,
+			llm: scripted,
+			stt: fakeStt,
+			tts: fakeTts,
+			mcp: {
+				async call(name, args) {
+					calls.push({ name, args });
+					const structured = name === 'add_task' ? { id: 21 } : { ok: true };
+					return { ok: true, text: JSON.stringify(structured), structured };
+				}
+			},
+			tools: () => [
+				...offeredTools(FAKE_TOOLS, ['add_task'], 300),
+				{
+					name: 'change_task',
+					description: 'Change task ratings.',
+					inputSchema: { type: 'object', properties: { id: { type: 'integer' } } }
+				}
+			],
+			history
+		});
+		await collect((emit) =>
+			focused.turn(
+				'pixel',
+				{
+					text: 'cria uma task: organizar arquivos. tag: teste. Urgência 4, facilidade 5, interesse 1',
+					speak: false
+				},
+				emit
+			)
+		);
+		expect(calls).toEqual([
+			{ name: 'add_task', args: { title: 'organizar arquivos', tags: 'teste' } },
+			{ name: 'change_task', args: { id: 21, urgency: 4, ease: 5, interest: 1 } }
+		]);
+	});
+
+	it('does not auto-apply ratings when change_task requires confirmation', async () => {
+		const guarded = new Assistant({
+			name: 'Onto',
+			language: 'en',
+			appUrl: 'https://app.example',
+			confirm: ['change_task'],
+			historyTurns: 3,
+			maxToolRounds: 4,
+			llm,
+			stt: fakeStt,
+			tts: fakeTts,
+			mcp: app,
+			tools: () => [
+				...offeredTools(FAKE_TOOLS, ['add_task'], 300),
+				{ name: 'change_task', description: '', inputSchema: { type: 'object' } }
+			],
+			history
+		});
+		await collect((emit) =>
+			guarded.turn('pixel', { text: 'add a task: organize files. Urgency 4', speak: false }, emit)
+		);
+		expect(app.calls.map((item) => item.name)).toEqual(['add_task']);
 	});
 
 	it('transcribes audio first and shows the words', async () => {

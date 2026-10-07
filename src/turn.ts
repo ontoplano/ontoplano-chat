@@ -20,7 +20,7 @@ import { matchesAny, toLlmTools, type LlmTool, type McpTool, type ToolResult } f
 import { nowFacts, systemPrompt } from './prompt.js';
 import { disabledTelemetry, type Telemetry } from './observability.js';
 import type { Stt, Tts } from './speech.js';
-import { asksAboutAccess, selectTools } from './tool-selection.js';
+import { asksAboutAccess, creationTool, selectTools, taskFields } from './tool-selection.js';
 
 export type TurnEvent =
 	| { type: 'transcript'; text: string }
@@ -315,10 +315,18 @@ export class Assistant {
 		speak: boolean
 	): Promise<void> {
 		const selected = selectTools(heard, this.o.tools());
+		const requestedCreation = creationTool(heard, selected);
+		let retryTool: McpTool | undefined;
 		for (let r = round; r <= this.o.maxToolRounds; r++) {
 			emit({ type: 'thinking' });
 			const final = r === this.o.maxToolRounds;
-			const tools = final ? [] : this.llmTools(selected);
+			const retryName = retryTool?.name;
+			const retryTools = retryName
+				? selected.filter(
+						(tool) => tool.name === retryName || (retryName === 'write_entry' && tool.name === 'notebooks')
+					)
+				: selected;
+			const tools = final ? [] : this.llmTools(retryTools);
 			const started = Date.now();
 			this.log(`[${device}] model: round ${r + 1}, ${tools.length} tools, ${messages.length} messages`);
 			const reply = await this.telemetry.run(
@@ -345,10 +353,33 @@ export class Assistant {
 				);
 			else this.log(`[${device}] model says (${took}s): ${oneLine(reply.content, LOG_REPLY_CHARS)}`);
 			if (reply.toolCalls.length && !final) {
+				retryTool = undefined;
 				messages.push({ role: 'assistant', content: reply.content || null, tool_calls: reply.raw });
 				const stopped = await this.runCalls(device, c, reply.toolCalls, messages, r, actions, heard, emit, selected);
 				if (stopped) return;
 				continue;
+			}
+			if (r === 0 && !actions.length && requestedCreation && !final) {
+				this.log(`[${device}] model skipped ${requestedCreation.name}; retrying with that tool`);
+				messages.push(
+					{ role: 'assistant', content: reply.content },
+					{
+						role: 'system',
+						content:
+							requestedCreation.name === 'write_entry'
+								? 'The person explicitly asked you to write a note. The notebooks and write_entry tools are available. If a notebook ID is needed, list notebooks, choose one, then call write_entry. Do not ask the person to choose when they said any notebook.'
+								: `The person explicitly asked you to act. The ${requestedCreation.name} tool is available. Call it now with the user's requested values; do not claim it is unavailable. If more fields need another tool, use it after this call.`
+					}
+				);
+				retryTool = requestedCreation;
+				continue;
+			}
+			if (retryTool) {
+				const text = c.language.toLowerCase().startsWith('pt')
+					? `Não consegui executar ${retryTool.name}; nenhuma alteração foi feita.`
+					: `I could not run ${retryTool.name}; nothing was changed.`;
+				await this.finish(device, c, heard, text, actions, emit, speak);
+				return;
 			}
 			const text = reply.content || fallbackReply(this.o.language);
 			await this.finish(device, c, heard, text, actions, emit, speak);
@@ -371,8 +402,11 @@ export class Assistant {
 		emit: Emit,
 		selected: readonly McpTool[]
 	): Promise<boolean> {
+		const requested = taskFields(heard);
 		for (let i = 0; i < calls.length; i++) {
-			const call = calls[i] as ToolCall;
+			let call = calls[i] as ToolCall;
+			if (call.name === 'add_task' && requested.tags && !call.args.tags)
+				call = { ...call, args: { ...call.args, tags: requested.tags } };
 			if (this.needsConfirmation(call.name) && this.isOffered(call.name, selected)) {
 				const id = randomUUID();
 				c.pending = {
@@ -401,6 +435,32 @@ export class Assistant {
 			const ran = await this.perform(call, emit, selected);
 			actions.push(ran.record);
 			messages.push(ran.message);
+			const id =
+				ran.result.structured && typeof ran.result.structured === 'object' && 'id' in ran.result.structured
+					? ran.result.structured.id
+					: undefined;
+			if (
+				calls.length === 1 &&
+				call.name === 'add_task' &&
+				ran.result.ok &&
+				typeof id === 'number' &&
+				Object.keys(requested.ratings).length &&
+				this.isOffered('change_task', selected) &&
+				!this.needsConfirmation('change_task')
+			) {
+				const args = { id, ...requested.ratings };
+				const followup: ToolCall = { id: randomUUID(), name: 'change_task', args };
+				messages.push({
+					role: 'assistant',
+					content: null,
+					tool_calls: [
+						{ id: followup.id, type: 'function', function: { name: followup.name, arguments: JSON.stringify(args) } }
+					]
+				});
+				const changed = await this.perform(followup, emit, selected);
+				actions.push(changed.record);
+				messages.push(changed.message);
+			}
 		}
 		return false;
 	}
@@ -410,7 +470,7 @@ export class Assistant {
 		call: ToolCall,
 		emit: Emit,
 		selected: readonly McpTool[]
-	): Promise<{ record: ActionRecord; message: Message }> {
+	): Promise<{ record: ActionRecord; message: Message; result: ToolResult }> {
 		return this.telemetry.run(call.name, 'tool', { arguments: call.args }, async (span) => {
 			emit({ type: 'action', id: call.id, name: call.name, args: call.args, status: 'running' });
 			let result: ToolResult;
@@ -441,6 +501,7 @@ export class Assistant {
 			const content =
 				result.text.length > TOOL_RESULT_CHARS ? result.text.slice(0, TOOL_RESULT_CHARS) + '…' : result.text;
 			return {
+				result,
 				record: { name: call.name, args: call.args, ok: result.ok, summary: receipt.summary, link: receipt.link },
 				message: { role: 'tool', tool_call_id: call.id, content: result.ok ? content : `Error: ${content}` }
 			};

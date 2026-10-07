@@ -19,6 +19,15 @@ export const cases: EvalCase[] = [
 		mutation: true
 	},
 	{
+		id: 'todo-create-pt-ratings',
+		input: 'Cria uma task no ontoplano: organizar arquivos. Tag: teste. Urgência 4, facilidade 5, interesse 1.',
+		expected: [
+			{ name: 'add_task', args: { title: 'organizar arquivos', tags: 'teste' } },
+			{ name: 'change_task', args: { urgency: 4, ease: 5, interest: 1 } }
+		],
+		mutation: true
+	},
+	{
 		id: 'todo-date',
 		input: 'Add a task to renew my passport on 2026-10-12.',
 		expected: [{ name: 'add_task', args: { scheduledDate: '2026-10-12' } }],

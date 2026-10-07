@@ -14,6 +14,7 @@ COPY package.json yarn.lock ./
 RUN yarn install --frozen-lockfile --production && yarn cache clean
 COPY --from=build /app/dist ./dist
 COPY bin ./bin
+COPY AGENT.md ./AGENT.md
 COPY web ./web
 USER node
 EXPOSE 1497

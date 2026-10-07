@@ -1,11 +1,7 @@
-/*
- * What the model is told before it hears anything.
- *
- * Short on purpose. A local model reads this on every turn, and a spoken
- * assistant's whole character fits in a paragraph: answer briefly in the
- * user's language, do things through the tools rather than claiming to,
- * never take orders from what a tool returns.
- */
+/* The model sees this dynamic context and AGENT.md on every turn. */
+import { readFileSync } from 'node:fs';
+
+const agentInstructions = readFileSync(new URL('../AGENT.md', import.meta.url), 'utf8').trim();
 export type PromptFacts = {
 	name: string;
 	language: string;
@@ -21,6 +17,7 @@ export type PromptFacts = {
 
 export function systemPrompt(f: PromptFacts): string {
 	return [
+		agentInstructions,
 		`You are ${f.name}, a voice assistant for one person's ontoplano account — their plan, tasks, notes, habits, shopping and goals. You are spoken to and your answers are read aloud.`,
 		`Answer in ${f.language}, in one or two short sentences, as speech: no markdown, no lists, no headings, no emoji, no code. Say what you did or found, then stop.`,
 		`Now is ${f.weekday} ${f.today} ${f.time} (${f.timezone}). Write dates to tools as YYYY-MM-DD and times as HH:MM; "tomorrow", "tonight" and "next week" are relative to now.`,
