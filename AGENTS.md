@@ -23,6 +23,8 @@ src/mcp.ts         the JSON-RPC client to the app; which tools are offered; the 
 src/llm.ts         the model: OpenAI-compatible chat completions with tools
 src/speech.ts      ears (openai | whispercpp | browser) and voice (openai | piper | browser)
 src/turn.ts        the loop: hear → think → act (with the confirmation gate) → answer → speak
+src/tool-selection.ts   choose relevant granted tool schemas for one request
+src/control.ts     private socket for stopping foreground or service processes
 src/describe.ts    the receipt for an action: one line and a link into the app
 src/history.ts     turns.jsonl — the log and the phone's history
 src/prompt.ts      the system prompt
@@ -32,7 +34,10 @@ src/fakes.ts       a model, ears, voice and app that need nothing installed
 src/ask.ts         questions on a terminal; a scripted one for the tests
 src/wizard.ts      `setup`: the six questions and the config they become
 src/cli.ts         setup · serve · pair · devices · revoke · doctor · config
+src/langfuse-trace-test.ts   synthetic trace delivery check
 install.sh         the one-line install: clone, build, PATH, then `setup`
+Dockerfile / compose.yaml   container stack for Chat, Ollama, and Speaches
+compose.config.toml.example   private Compose config template; copy to ignored compose.config.toml
 web/               the phone: index.html, app.js, strings.js, style.css, sw.js, icons
 tests/             vitest — every module above, with the fakes
 e2e/               Playwright — the page, at phone and desktop width
@@ -70,6 +75,10 @@ e2e/               Playwright — the page, at phone and desktop width
   fixtures without a model. Refresh `eval/tools.json` from the sibling app's
   static MCP manifest with `node scripts/update-eval-tools.mjs`, then review
   descriptions and expectations.
+- **Compose is a separate runtime.** `make compose-up` builds Chat and starts
+  Ollama and Speaches; it uses `compose.config.toml` as a secret and named
+  volumes. `make compose-pair` prints its pairing code. Do not assume a host
+  `127.0.0.1` service is reachable from a Compose container.
 - **Say "device", not "phone", wherever the thing pairing could be this
   computer's own browser** — the command's words, the wizard's, the page's.
   The first real run paired the computer and read "now pair the phone" after
