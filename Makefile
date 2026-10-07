@@ -11,7 +11,7 @@
 include defaults.env
 
 .DEFAULT_GOAL := help
-.PHONY: help setup stack build link dev serve demo pair devices doctor langfuse-check config test test-unit test-e2e eval eval-langfuse eval-check lint format icons install-service uninstall-service logs
+.PHONY: help setup stack build link dev serve demo pair devices doctor langfuse-check langfuse-trace-test config test test-unit test-e2e eval eval-langfuse eval-check lint format icons install-service uninstall-service logs compose-up compose-down compose-logs compose-pair
 
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
@@ -24,7 +24,10 @@ help:
 	@echo "  make stack             bring up Ollama and its model, the Speaches container(s) and their models"
 	@echo "  make doctor            check the model, the ears, the voice and the app"
 	@echo "  make install-service   run it as a user service from now on (make logs follows it)"
+	@echo "  make compose-up       build and start Chat, Ollama and Speaches in containers"
+	@echo "  make compose-down     stop the Compose stack"
 	@echo "  make langfuse-check    check the Langfuse URL and project keys"
+	@echo "  make langfuse-trace-test   send and verify a synthetic Langfuse trace"
 	@echo "  make test              unit tests, then the browser suite"
 	@echo "  make eval              run the 29-case agent evaluation against a model and synthetic app data"
 	@echo "  make eval-langfuse     run the same cases as a Langfuse experiment"
@@ -78,6 +81,9 @@ doctor: build
 langfuse-check: build
 	@node bin/ontoplano-chat.mjs langfuse-check
 
+langfuse-trace-test: build
+	@node bin/ontoplano-chat.mjs langfuse-trace-test
+
 config: build
 	@node bin/ontoplano-chat.mjs config
 
@@ -125,3 +131,16 @@ uninstall-service:
 
 logs:
 	@journalctl --user -u ontoplano-chat -f
+
+compose-up:
+	@test -f compose.config.toml || { echo "copy compose.config.toml.example to compose.config.toml and fill the app token first"; exit 1; }
+	@docker compose up -d --build
+
+compose-down:
+	@docker compose down
+
+compose-logs:
+	@docker compose logs -f chat ollama speaches
+
+compose-pair:
+	@docker compose exec chat node bin/ontoplano-chat.mjs pair

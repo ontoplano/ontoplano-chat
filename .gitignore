@@ -1,5 +1,6 @@
 /node_modules/
 /dist/
+/compose.config.toml
 /test-results/
 /playwright-report/
 /.ensaboai/

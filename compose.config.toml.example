@@ -1,0 +1,34 @@
+# Copy to compose.config.toml, then add your Ontoplano token. This file is ignored by Git.
+[server]
+host = "0.0.0.0"
+port = 1497
+# Docker publishes only on host loopback; use a trusted HTTPS proxy for a phone.
+insecure = true
+
+[ontoplano]
+url = "https://app.ontoplano.com"
+token = ""
+
+[llm]
+url = "http://ollama:11434/v1"
+model = "qwen3.5:9b"
+
+[stt]
+kind = "openai"
+url = "http://speaches:8000"
+model = "Systran/faster-whisper-small"
+language = "pt"
+
+[tts]
+# The device's own pt-BR voice avoids Kokoro's accent; change this in your config if desired.
+kind = "browser"
+
+[assistant]
+name = "Onto"
+language = "pt-BR"
+
+[langfuse]
+# If Langfuse runs in another Compose project, use an address reachable from this container.
+public_key = ""
+secret_key = ""
+base_url = "https://cloud.langfuse.com"
