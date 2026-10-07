@@ -28,6 +28,7 @@ src/control.ts     private socket for stopping foreground or service processes
 src/describe.ts    the receipt for an action: one line and a link into the app
 src/history.ts     turns.jsonl — the log and the phone's history
 src/prompt.ts      the system prompt
+AGENT.md           model-independent behavior rules loaded into every turn
 src/server.ts      HTTP: the page, the API, the stream, the headers, the limits
 src/engines.ts     the four engines from the config, or the fakes
 src/fakes.ts       a model, ears, voice and app that need nothing installed
@@ -69,7 +70,7 @@ e2e/               Playwright — the page, at phone and desktop width
   `src/fakes.ts`; the unit tests and the e2e suite run against them. A new
   tool the fake app should understand is added there, with a sentence shape
   the fake model maps to it.
-- **Agent evals use synthetic data.** `make eval` sends 29 cases from
+- **Agent evals use synthetic data.** `make eval` sends 30 cases from
   `eval/cases.ts` through the real model and a disposable in-memory tool backend;
   it never connects to a real Ontoplano account. `make eval-check` validates the
   fixtures without a model. Refresh `eval/tools.json` from the sibling app's
@@ -110,6 +111,10 @@ e2e/               Playwright — the page, at phone and desktop width
 - **Every step of a turn is in the journal** — heard, each model round with
   its duration and thinking, each tool and its answer. A turn that hangs on
   "…" must be explainable from `journalctl --user -u ontoplano-chat`.
+- **Explicit creation gets one focused retry** if the model answers without
+  calling the available creation tool. A task's explicitly stated tag and
+  ratings are carried through the relevant MCP calls. Keep this narrow so an
+  ambiguous or negated request is never turned into a write.
 - **The voice speaks the assistant's language.** Kokoro's first letter is its
   language; the default follows `assistant.language` and doctor fails a
   mismatch.

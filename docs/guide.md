@@ -5,6 +5,14 @@ the bank on Friday"; a model answers, does it, and reads the answer back.
 The model can run **on your own computer** or at an OpenAI-compatible provider.
 The app token stays with the Chat server and is never sent to the model or the browser.
 
+The model is a choice, not a requirement to run locally. The wizard offers
+Ollama, OpenAI, Anthropic Claude's OpenAI-compatible endpoint, and other
+compatible providers. A Codex-capable OpenAI API model can be selected by
+model ID if it supports Chat Completions and tool calls. Chat needs a provider
+API key for a hosted model; a Claude Code or Codex subscription/login is not
+that key. Claude Code and Codex can also use Ontoplano's MCP server directly,
+independently of this voice interface.
+
 ## Install
 
 One line, on the computer that will run it (Linux or macOS, Node 22+):
@@ -176,6 +184,14 @@ optional `[langfuse]`. Data
 lives in `~/.local/share/ontoplano-chat/`: `devices.json` (hashes),
 `pairing.json` (a hashed code, briefly), `turns.jsonl` (the log).
 
+[`AGENT.md`](../AGENT.md) contains the model-independent behavior rules.
+The server loads it at startup and includes it in every model turn. Edit it
+in your checkout and restart Chat to change how the assistant acts; never put
+tokens or other secrets in this tracked file. The app's token and the actual
+MCP tool list still determine what actions are possible. For a smaller model,
+lower `[assistant].history_turns` to reduce context and latency; use `make eval`
+with selected cases to compare behavior before relying on a model.
+
 ## From a checkout
 
 Without the one-liner: `make build` installs, builds and links
@@ -245,7 +261,7 @@ Trace content may contain private task and note text. Use a Langfuse instance yo
 
 ### Agent evaluations
 
-`make eval` runs 29 synthetic cases through the real model and agent loop. It never loads your Ontoplano config, token, MCP server, or account. Changing `[ontoplano].url` from `app.ontoplano.com` to `localhost:1493` does **not** change an eval run. A fresh in-memory synthetic tool backend and temporary turn history are used for each case. The model defaults to `http://127.0.0.1:11434/v1` and `qwen3.5:9b`; set `EVAL_MODEL_URL`, `EVAL_MODEL_NAME`, and optionally `EVAL_MODEL_API_KEY` to test another OpenAI-compatible model. Without Langfuse keys, the model endpoint is the only network target. The command prints both endpoints, the model probe, per-round and per-tool durations, each case's elapsed time, and reasons for failures. `make eval-check` validates the case list and tool definitions without contacting a model.
+`make eval` runs 30 synthetic cases through the real model and agent loop. It never loads your Ontoplano config, token, MCP server, or account. Changing `[ontoplano].url` from `app.ontoplano.com` to `localhost:1493` does **not** change an eval run. A fresh in-memory synthetic tool backend and temporary turn history are used for each case. The model defaults to `http://127.0.0.1:11434/v1` and `qwen3.5:9b`; set `EVAL_MODEL_URL`, `EVAL_MODEL_NAME`, and optionally `EVAL_MODEL_API_KEY` to test another OpenAI-compatible model. Without Langfuse keys, the model endpoint is the only network target. The command prints both endpoints, the model probe, per-round and per-tool durations, each case's elapsed time, and reasons for failures. `make eval-check` validates the case list and tool definitions without contacting a model.
 
 To investigate a few failures without repeating the full run, use `EVAL_CASES=today,recurring-add,goals-add,goals-progress,workouts-read make eval`. The summary then covers only those selected cases. A failed case prints its expected and observed calls and the reason it failed.
 

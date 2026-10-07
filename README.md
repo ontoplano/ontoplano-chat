@@ -1,17 +1,18 @@
 # ontoplano-chat
 
-A local voice assistant for [Ontoplano](https://app.ontoplano.com). Speak or type a request; the assistant uses Ontoplano's MCP tools, shows each action, and asks before destructive changes. It runs as a small web app on your phone or computer.
+A voice and text assistant for [Ontoplano](https://app.ontoplano.com). Speak or type a request; the assistant uses Ontoplano's MCP tools, shows each action, and asks before destructive changes. It runs as a web app on your phone or computer.
 
 ## At a glance
 
-- **Local first:** Ollama, speech recognition, and speech synthesis can run on your own computer. OpenAI-compatible hosted models are optional.
+- **Choose your model:** run Ollama locally or connect an OpenAI-compatible API, including OpenAI and Anthropic Claude. API models available to Codex can also be configured when they support Chat Completions and tool calls. Cloud models use their own API keys.
 - **Scoped access:** the Ontoplano token controls what the assistant may do. The server offers only relevant granted tools to the model for each request.
 - **Visible actions:** replies include links to the records changed in Ontoplano; the journal records model rounds and tool results.
 - **Voice on your terms:** use the speaker button to mute replies. Browser and local voice options are available.
 - **Optional traces:** Langfuse records model and MCP spans when configured. Evaluations use synthetic Ontoplano data.
+- **Shared agent rules:** [AGENT.md](AGENT.md) is included in every model turn, regardless of provider.
 
 ```text
-Browser or phone  →  ontoplano-chat  →  Ollama or another model
+Browser or phone  →  ontoplano-chat  →  Ollama, Claude, OpenAI, or another compatible model
                          │             →  speech service (optional)
                          └────────────→  Ontoplano MCP (token scoped)
 ```
