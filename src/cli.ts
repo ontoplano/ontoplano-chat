@@ -28,6 +28,7 @@ import { checkForServing, exampleConfig, loadConfig, ConfigError, type Config } 
 import { kokoroLanguageOf, kokoroVoiceFor, OLLAMA_INSTALL, PROVIDERS, SPEACHES_RUN } from './constants.js';
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
+import { requestStop, startControl } from './control.js';
 import { langfuseTelemetry } from './observability.js';
 import { checkLangfuse } from './langfuse-check.js';
 import { Devices } from './pairing.js';
@@ -141,16 +142,29 @@ async function serve(): Promise<number> {
 			out('');
 		}
 	}
-	await new Promise<void>((resolve) => {
-		const stop = (): void => {
-			stamp('stopping');
-			engines.tools.stop();
-			server.close(() => resolve());
-			setTimeout(resolve, 2000).unref();
-		};
-		process.once('SIGINT', stop);
-		process.once('SIGTERM', stop);
-	});
+	let resolveStop: () => void = () => {};
+	const stopped = new Promise<void>((resolve) => (resolveStop = resolve));
+	let stopping = false;
+	const stop = (): void => {
+		if (stopping) return;
+		stopping = true;
+		stamp('stopping');
+		engines.tools.stop();
+		server.close(resolveStop);
+		setTimeout(resolveStop, 2000).unref();
+	};
+	let closeControl: () => Promise<void>;
+	try {
+		closeControl = await startControl(c.dataDir, stop);
+	} catch (error) {
+		server.close();
+		err(`control socket: ${(error as Error).message}`);
+		return 1;
+	}
+	process.once('SIGINT', stop);
+	process.once('SIGTERM', stop);
+	await stopped;
+	await closeControl();
 	await telemetry.shutdown();
 	return 0;
 }
@@ -544,11 +558,17 @@ export async function main(argv: string[]): Promise<number> {
 		case 'serve':
 			return serve();
 		case 'stop':
+			if (await requestStop(config().dataDir)) {
+				out('stopping ontoplano-chat');
+				return 0;
+			}
 			if (!has('systemctl')) {
-				err('systemctl is unavailable; press Ctrl-C in the terminal running serve');
+				err('no running ontoplano-chat control socket; press Ctrl-C in a pre-update foreground terminal');
 				return 1;
 			}
-			return (await shell('systemctl --user stop ontoplano-chat')) ? 0 : 1;
+			if (await shell('systemctl --user stop ontoplano-chat')) return 0;
+			err('no service stopped; press Ctrl-C in a pre-update foreground terminal');
+			return 1;
 		case 'install-service':
 			return (await installService()) ? 0 : 1;
 		case 'langfuse-check': {
