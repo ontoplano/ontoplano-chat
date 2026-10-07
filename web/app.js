@@ -671,6 +671,7 @@ async function openSettings() {
 	$('version').textContent = state.me ? `ontoplano-chat ${state.me.version}` : '';
 	const facts = $('facts');
 	facts.textContent = '';
+	$('toolDetails').hidden = true;
 	const row = (key, value, bad) => {
 		const dt = document.createElement('dt');
 		dt.textContent = t(key);
@@ -701,7 +702,8 @@ async function openSettings() {
 		say(dds[3], s.stt.kind === 'browser' ? t('settings.browser') : s.stt.about, s.stt.problem);
 		say(dds[4], s.tts.kind === 'browser' ? t('settings.browser') : s.tts.about, s.tts.problem);
 		say(dds[5], `${s.tools.offered} / ${s.tools.granted}`, s.tools.problem);
-		dds[5].title = s.tools.names.join(', ');
+		$('toolNames').textContent = s.tools.names.join(', ');
+		$('toolDetails').hidden = !s.tools.names.length;
 	} catch {
 		// the sheet still shows what it knows
 	}

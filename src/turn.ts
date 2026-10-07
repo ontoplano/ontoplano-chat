@@ -20,6 +20,7 @@ import { matchesAny, toLlmTools, type LlmTool, type McpTool, type ToolResult } f
 import { nowFacts, systemPrompt } from './prompt.js';
 import { disabledTelemetry, type Telemetry } from './observability.js';
 import type { Stt, Tts } from './speech.js';
+import { asksAboutAccess, selectTools } from './tool-selection.js';
 
 export type TurnEvent =
 	| { type: 'transcript'; text: string }
@@ -123,26 +124,27 @@ export class Assistant {
 		this.conversations.delete(device);
 	}
 
-	private llmTools(): LlmTool[] {
-		return toLlmTools(this.o.tools());
+	private llmTools(tools: readonly McpTool[]): LlmTool[] {
+		return toLlmTools(tools);
 	}
 
-	private isOffered(name: string): boolean {
-		return this.o.tools().some((t) => t.name === name);
+	private isOffered(name: string, selected: readonly McpTool[]): boolean {
+		return selected.some((t) => t.name === name) && this.o.tools().some((t) => t.name === name);
 	}
 
 	private needsConfirmation(name: string): boolean {
 		return matchesAny(name, this.o.confirm);
 	}
 
-	private system(language: string): Message {
+	private system(language: string, tools: readonly McpTool[]): Message {
 		const facts = nowFacts(this.now(), this.o.language);
 		return {
 			role: 'system',
 			content: systemPrompt({
 				name: this.o.name,
 				language,
-				toolCount: this.o.tools().length,
+				toolCount: tools.length,
+				toolNames: tools.map((tool) => tool.name),
 				...facts
 			})
 		};
@@ -191,8 +193,23 @@ export class Assistant {
 						// Something else was said: the question lapses and the new thing is heard.
 						c.pending = null;
 					}
+					if (asksAboutAccess(heard)) {
+						const available = this.o.tools();
+						const examples = available
+							.filter((tool) => /notebook|note|entry|task|bill/i.test(tool.name))
+							.slice(0, 8)
+							.map((tool) => tool.name)
+							.join(', ');
+						const pt = c.language.toLowerCase().startsWith('pt');
+						const text = pt
+							? `Tenho ${available.length} ferramentas disponíveis${examples ? `, incluindo ${examples}` : ''}. A lista não mostra quais cadernos o token pode acessar; só uma chamada ao app confirma isso. Não revelo o valor do token.`
+							: `I have ${available.length} tools available${examples ? `, including ${examples}` : ''}. The list does not show which notebooks the token can access; only an app call can confirm that. I cannot reveal the token value.`;
+						await this.finish(device, c, heard, text, [], tracedEmit, input.speak !== false);
+						return;
+					}
+					const selected = selectTools(heard, this.o.tools());
 					const messages: Message[] = [
-						this.system(c.language),
+						this.system(c.language, selected),
 						...this.recentContext(c),
 						{ role: 'user', content: heard }
 					];
@@ -237,7 +254,8 @@ export class Assistant {
 					const messages = [...p.messages];
 					const actions = [...p.actions];
 					if (yes) {
-						const ran = await this.perform(p.call, tracedEmit);
+						const selected = selectTools(p.heard, this.o.tools());
+						const ran = await this.perform(p.call, tracedEmit, selected);
 						actions.push(ran.record);
 						messages.push(ran.message);
 					} else {
@@ -248,7 +266,17 @@ export class Assistant {
 							content: 'The person declined; this was NOT done.'
 						});
 					}
-					const stopped = await this.runCalls(device, c, p.rest, messages, p.round, actions, p.heard, tracedEmit);
+					const stopped = await this.runCalls(
+						device,
+						c,
+						p.rest,
+						messages,
+						p.round,
+						actions,
+						p.heard,
+						tracedEmit,
+						selectTools(p.heard, this.o.tools())
+					);
 					if (stopped) return;
 					await this.run(device, c, messages, p.round + 1, actions, p.heard, tracedEmit, speak);
 				} catch (e) {
@@ -286,10 +314,11 @@ export class Assistant {
 		emit: Emit,
 		speak: boolean
 	): Promise<void> {
+		const selected = selectTools(heard, this.o.tools());
 		for (let r = round; r <= this.o.maxToolRounds; r++) {
 			emit({ type: 'thinking' });
 			const final = r === this.o.maxToolRounds;
-			const tools = final ? [] : this.llmTools();
+			const tools = final ? [] : this.llmTools(selected);
 			const started = Date.now();
 			this.log(`[${device}] model: round ${r + 1}, ${tools.length} tools, ${messages.length} messages`);
 			const reply = await this.telemetry.run(
@@ -317,7 +346,7 @@ export class Assistant {
 			else this.log(`[${device}] model says (${took}s): ${oneLine(reply.content, LOG_REPLY_CHARS)}`);
 			if (reply.toolCalls.length && !final) {
 				messages.push({ role: 'assistant', content: reply.content || null, tool_calls: reply.raw });
-				const stopped = await this.runCalls(device, c, reply.toolCalls, messages, r, actions, heard, emit);
+				const stopped = await this.runCalls(device, c, reply.toolCalls, messages, r, actions, heard, emit, selected);
 				if (stopped) return;
 				continue;
 			}
@@ -339,11 +368,12 @@ export class Assistant {
 		round: number,
 		actions: ActionRecord[],
 		heard: string,
-		emit: Emit
+		emit: Emit,
+		selected: readonly McpTool[]
 	): Promise<boolean> {
 		for (let i = 0; i < calls.length; i++) {
 			const call = calls[i] as ToolCall;
-			if (this.needsConfirmation(call.name) && this.isOffered(call.name)) {
+			if (this.needsConfirmation(call.name) && this.isOffered(call.name, selected)) {
 				const id = randomUUID();
 				c.pending = {
 					id,
@@ -368,7 +398,7 @@ export class Assistant {
 				emit({ type: 'done' });
 				return true;
 			}
-			const ran = await this.perform(call, emit);
+			const ran = await this.perform(call, emit, selected);
 			actions.push(ran.record);
 			messages.push(ran.message);
 		}
@@ -376,11 +406,15 @@ export class Assistant {
 	}
 
 	/** One call, with its receipt. A tool the model was not offered is refused here, not sent on. */
-	private async perform(call: ToolCall, emit: Emit): Promise<{ record: ActionRecord; message: Message }> {
+	private async perform(
+		call: ToolCall,
+		emit: Emit,
+		selected: readonly McpTool[]
+	): Promise<{ record: ActionRecord; message: Message }> {
 		return this.telemetry.run(call.name, 'tool', { arguments: call.args }, async (span) => {
 			emit({ type: 'action', id: call.id, name: call.name, args: call.args, status: 'running' });
 			let result: ToolResult;
-			if (!this.isOffered(call.name)) {
+			if (!this.isOffered(call.name, selected)) {
 				result = { ok: false, text: `There is no tool called ${call.name}.`, structured: undefined };
 			} else {
 				try {

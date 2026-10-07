@@ -136,6 +136,10 @@
 		<dialog id="settings" class="sheet">
 			<h2 data-t="settings.title">This assistant</h2>
 			<dl class="facts" id="facts"></dl>
+			<details id="toolDetails" hidden>
+				<summary data-t="settings.toolNames">Available tools</summary>
+				<p class="muted small" id="toolNames"></p>
+			</details>
 			<label class="row">
 				<input type="checkbox" id="speakReplies" checked />
 				<span data-t="settings.speak">Read replies aloud</span>

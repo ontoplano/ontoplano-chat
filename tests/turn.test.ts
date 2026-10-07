@@ -71,6 +71,16 @@ describe('a turn', () => {
 		expect(types(events)).toEqual(['thinking', 'reply', 'done']);
 	});
 
+	it('reports actual offered tools and does not invent token scopes', async () => {
+		const events = await collect((emit) =>
+			assistant.turn('pixel', { text: 'what tools does my token grant?', speak: false }, emit)
+		);
+		const reply = events.find((event) => event.type === 'reply');
+		expect(reply).toMatchObject({ text: expect.stringContaining('5 tools available') });
+		expect(reply).toMatchObject({ text: expect.stringContaining('only an app call can confirm') });
+		expect(app.calls).toEqual([]);
+	});
+
 	it('transcribes audio first and shows the words', async () => {
 		const events = await collect((emit) =>
 			assistant.turn(
