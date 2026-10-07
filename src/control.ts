@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 const SOCKET_NAME = 'control.sock';
 const CONTROL_TIMEOUT_MS = 2000;
+const SHUTDOWN_WAIT_MS = 10_000;
+const SHUTDOWN_POLL_MS = 100;
 
 const socketPath = (dataDir: string): string => join(dataDir, SOCKET_NAME);
 
@@ -50,4 +52,11 @@ export function requestStop(dataDir: string, command = 'stop'): Promise<boolean>
 		client.on('end', () => finish(command === 'probe' ? true : answer.trim() === 'stopping'));
 		client.on('error', () => finish(false));
 	});
+}
+
+export async function waitForControlClose(dataDir: string): Promise<boolean> {
+	const until = Date.now() + SHUTDOWN_WAIT_MS;
+	while (existsSync(socketPath(dataDir)) && Date.now() < until)
+		await new Promise((resolve) => setTimeout(resolve, SHUTDOWN_POLL_MS));
+	return !existsSync(socketPath(dataDir));
 }

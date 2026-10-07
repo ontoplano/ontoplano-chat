@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { checkForServing, exampleConfig, fromToml, normalizeUrl, ConfigError } from '../src/config.js';
+import { checkForServing, exampleConfig, fromToml, loadConfig, normalizeUrl, ConfigError } from '../src/config.js';
 import { DEFAULT_PORT, DEFAULT_TOOLS } from '../src/constants.js';
 
 const env = { HOME: '/home/x' } as NodeJS.ProcessEnv;
@@ -39,6 +42,23 @@ describe('config', () => {
 			{ ...env, LANGFUSE_SECRET_KEY: 'sk-env' }
 		);
 		expect(c.langfuse).toEqual({ publicKey: 'pk-file', secretKey: 'sk-env', baseUrl: 'http://localhost:3000' });
+	});
+
+	it('loads an older Langfuse env file for a foreground server', () => {
+		const home = mkdtempSync(join(tmpdir(), 'onto-config-'));
+		try {
+			const configDir = join(home, '.config', 'ontoplano-chat');
+			mkdirSync(configDir, { recursive: true });
+			writeFileSync(join(configDir, 'config.toml'), '[langfuse]\npublic_key = "pk-toml"\n');
+			writeFileSync(
+				join(configDir, 'langfuse.env'),
+				'LANGFUSE_PUBLIC_KEY=pk-env\nLANGFUSE_SECRET_KEY=sk-env\nLANGFUSE_BASE_URL=http://localhost:3000\n'
+			);
+			const c = loadConfig({ HOME: home, ONTOPLANO_CHAT_CONFIG: join(configDir, 'config.toml') });
+			expect(c.langfuse).toEqual({ publicKey: 'pk-toml', secretKey: 'sk-env', baseUrl: 'http://localhost:3000' });
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+		}
 	});
 
 	it('an address typed without a scheme is http', () => {
