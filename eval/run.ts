@@ -21,7 +21,7 @@ const tools = JSON.parse(
 const names = new Set(tools.map((tool) => tool.name));
 const writes = new Set(tools.filter((tool) => tool.writes).map((tool) => tool.name));
 const MODEL_URL = process.env.EVAL_MODEL_URL ?? 'http://127.0.0.1:11434/v1';
-const MODEL_NAME = process.env.EVAL_MODEL_NAME ?? 'qwen2.5:7b';
+const MODEL_NAME = process.env.EVAL_MODEL_NAME ?? 'qwen3.5:9b';
 const MODEL_TIMEOUT_MS = 120_000;
 const MODEL_MAX_ROUNDS = 6;
 const HISTORY_TURNS = 4;

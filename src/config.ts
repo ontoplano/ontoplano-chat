@@ -123,7 +123,7 @@ export function defaults(env: NodeJS.ProcessEnv = process.env): Config {
 		ontoplano: { url: 'https://app.ontoplano.com', token: '' },
 		llm: {
 			url: 'http://127.0.0.1:11434/v1',
-			model: 'qwen2.5:7b',
+			model: 'qwen3.5:9b',
 			apiKey: '',
 			temperature: 0.2,
 			maxToolRounds: DEFAULT_MAX_TOOL_ROUNDS,
@@ -333,7 +333,7 @@ token = ""
 # Any OpenAI-compatible chat endpoint with tool calling: Ollama, llama.cpp's
 # server, LM Studio, vLLM. Ollama is the default.
 url = "http://127.0.0.1:11434/v1"
-model = "qwen2.5:7b"
+model = "qwen3.5:9b"
 api_key = ""
 temperature = 0.2
 max_tool_rounds = ${DEFAULT_MAX_TOOL_ROUNDS}

@@ -34,7 +34,7 @@ describe('the wizard', () => {
 		const c = checks();
 		const choices = await runWizard(scriptedAsk(['', 'tok']), c);
 		expect(choices.provider).toBe('ollama');
-		expect(choices.llm).toEqual({ url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', apiKey: '' });
+		expect(choices.llm).toEqual({ url: 'http://127.0.0.1:11434/v1', model: 'qwen3.5:9b', apiKey: '' });
 		expect(choices.stt.kind).toBe('openai');
 		expect(choices.stt.language).toBe('pt');
 		expect(choices.tts.kind).toBe('browser');
@@ -42,7 +42,7 @@ describe('the wizard', () => {
 		expect(choices.host).toBe('127.0.0.1');
 		const parsed = fromToml(renderConfig(choices), env);
 		expect(parsed.ontoplano.token).toBe('tok');
-		expect(parsed.llm.model).toBe('qwen2.5:7b');
+		expect(parsed.llm.model).toBe('qwen3.5:9b');
 		expect(parsed.assistant.language).toBe('pt-BR');
 	});
 
@@ -83,7 +83,7 @@ describe('the wizard', () => {
 				++calls === 1
 					? 'no model runner'
 					: calls === 2
-						? 'model "qwen2.5:7b" is not pulled: the runner lists no models'
+						? 'model "qwen3.5:9b" is not pulled: the runner lists no models'
 						: null,
 			llmPull: async (_u, model) => {
 				pulled = model;
@@ -94,7 +94,7 @@ describe('the wizard', () => {
 		const log: string[] = [];
 		await runWizard(scriptedAsk(['', 'tok', '', '', '', 'y', 'y'], log), c);
 		expect(c.ran[0]).toMatch(/ollama\.com\/install/);
-		expect(pulled).toBe('qwen2.5:7b');
+		expect(pulled).toBe('qwen3.5:9b');
 		expect(log.join('\n')).toContain('✓ the model answers');
 	});
 
@@ -145,7 +145,7 @@ describe('one step alone', () => {
 		appUrl: 'https://my.onto',
 		token: 'kept',
 		provider: 'ollama',
-		llm: { url: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:7b', apiKey: '' },
+		llm: { url: 'http://127.0.0.1:11434/v1', model: 'qwen3.5:9b', apiKey: '' },
 		stt: {
 			kind: 'openai' as const,
 			url: 'http://127.0.0.1:8000',

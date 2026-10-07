@@ -153,7 +153,7 @@ export const PROVIDERS: Provider[] = [
 		key: 'ollama',
 		name: 'Ollama, on this computer',
 		url: 'http://127.0.0.1:11434/v1',
-		model: 'qwen2.5:7b',
+		model: 'qwen3.5:9b',
 		local: true,
 		needsKey: false,
 		note: 'Everything stays here. The 7b model wants about 5 GB of memory; qwen2.5:3b is lighter, qwen2.5:14b better.'

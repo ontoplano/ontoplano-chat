@@ -42,7 +42,7 @@ afterAll(() => server.close());
 
 describe('the runner', () => {
 	it('with no models pulled is not fine, and pulls on request', async () => {
-		const llm = openAiLlm({ url, model: 'qwen2.5:7b', timeoutMs: 5000 });
+		const llm = openAiLlm({ url, model: 'qwen3.5:9b', timeoutMs: 5000 });
 		expect(await llm.check()).toMatch(/not pulled: the runner lists no models/);
 		expect(await llm.pull()).toBeNull();
 		expect(await llm.check()).toBeNull();
