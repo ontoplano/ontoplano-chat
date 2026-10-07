@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { McpTool } from '../src/mcp.js';
-import { asksAboutAccess, creationTool, selectTools, taskFields } from '../src/tool-selection.js';
+import { asksAboutAccess, requestsAction, selectTools } from '../src/tool-selection.js';
 
 const tool = (name: string): McpTool => ({ name, description: '', inputSchema: { type: 'object' } });
 
@@ -36,12 +36,8 @@ it('selects Portuguese writing and task creation even with a large tool list', (
 		'write_entry'
 	);
 	expect(selectTools('cria uma tarefa: organizar arquivos', all).map((item) => item.name)).toContain('add_task');
-	expect(creationTool('escreve qualquer coisa em qualquer caderno', all)?.name).toBe('write_entry');
-	expect(creationTool('sim, escreve qualquer coisa lá', all)?.name).toBe('write_entry');
-	expect(creationTool('cria uma task: organizar arquivos', all)?.name).toBe('add_task');
-	expect(creationTool('não crie uma task', all)).toBeUndefined();
-	expect(taskFields('tag: teste. Urgência 4, facilidade 5, interesse 1')).toEqual({
-		tags: 'teste',
-		ratings: { urgency: 4, ease: 5, interest: 1 }
-	});
+	expect(requestsAction('sim, escreve qualquer coisa lá')).toBe(true);
+	expect(requestsAction('cria uma task: organizar arquivos')).toBe(true);
+	expect(requestsAction('registre uma medição')).toBe(true);
+	expect(requestsAction('não crie uma task')).toBe(false);
 });

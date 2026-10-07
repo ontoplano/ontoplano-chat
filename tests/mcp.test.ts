@@ -25,7 +25,13 @@ beforeAll(async () => {
 			};
 			switch (msg.method) {
 				case 'initialize':
-					return answer({ protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'fake' } });
+					return answer({
+						protocolVersion: '2025-03-26',
+						capabilities: { tools: {} },
+						serverInfo: { name: 'fake' },
+						instructions: 'Use the offered schemas.',
+						_access: { kind: 'notebook', id: 7, label: 'notebook: Sample' }
+					});
 				case 'tools/list':
 					return answer({
 						tools: [
@@ -83,6 +89,10 @@ describe('the MCP client', () => {
 		const mcp = new OntoplanoMcp(url, 'good');
 		const tools = await mcp.listTools();
 		expect(tools.map((t) => t.name)).toEqual(['today', 'add_task', 'remove_task']);
+		expect(mcp.context).toEqual({
+			instructions: 'Use the offered schemas.',
+			access: { kind: 'notebook', id: 7, label: 'notebook: Sample' }
+		});
 		await mcp.listTools();
 		expect(seen.filter((s) => s.method === 'initialize')).toHaveLength(1);
 		expect(seen[0]?.auth).toBe('Bearer good');

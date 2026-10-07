@@ -78,8 +78,37 @@ describe('a turn', () => {
 		);
 		const reply = events.find((event) => event.type === 'reply');
 		expect(reply).toMatchObject({ text: expect.stringContaining('5 tools available') });
-		expect(reply).toMatchObject({ text: expect.stringContaining('only an app call can confirm') });
+		expect(reply).toMatchObject({ text: expect.stringContaining('server did not report') });
 		expect(app.calls).toEqual([]);
+	});
+
+	it('reports the notebook boundary supplied by the MCP server', async () => {
+		const scoped = new Assistant({
+			name: 'Onto',
+			language: 'pt-BR',
+			appUrl: 'https://app.example',
+			confirm: DEFAULT_CONFIRM,
+			historyTurns: 3,
+			maxToolRounds: 4,
+			llm,
+			stt: fakeStt,
+			tts: fakeTts,
+			mcp: app,
+			tools: () => offeredTools(FAKE_TOOLS, OFFERED, 300),
+			mcpContext: () => ({
+				instructions: 'Use the tool schemas.',
+				access: { kind: 'notebook', id: 7, label: 'notebook: Sample' }
+			}),
+			history
+		});
+		const events = await collect((emit) =>
+			scoped.turn('pixel', { text: 'quais ferramentas meu token permite?', speak: false }, emit)
+		);
+		expect(events.find((event) => event.type === 'reply')).toMatchObject({
+			text: expect.stringContaining('notebook: Sample')
+		});
+		await collect((emit) => scoped.turn('pixel', { text: 'hello', speak: false }, emit));
+		expect(llm.prompts.at(-1)?.[0]).toMatchObject({ content: expect.stringContaining('notebook: Sample') });
 	});
 
 	it('retries a clear task creation with the available tool after a model refusal', async () => {
@@ -135,24 +164,43 @@ describe('a turn', () => {
 		const events = await collect((emit) =>
 			focused.turn('pixel', { text: 'cria uma task: organizar arquivos', speak: false }, emit)
 		);
-		expect(toolSets[1]).toEqual(['add_task']);
+		expect(toolSets[1]).toContain('add_task');
 		expect(app.calls.map((item) => item.name)).toEqual(['add_task']);
 		expect(events.find((event) => event.type === 'reply')).toMatchObject({ text: 'Criei a tarefa.' });
 	});
 
-	it('keeps explicit task tags and ratings when the model omits them', async () => {
-		const calls: { name: string; args: Record<string, unknown> }[] = [];
-		const scripted: Llm = {
-			model: 'synthetic-omission',
-			async chat() {
-				if (calls.length) return { content: 'Criei a tarefa.', toolCalls: [], raw: [], thinking: '' };
-				const args = { title: 'organizar arquivos' };
-				return {
-					content: '',
-					toolCalls: [{ id: 'task-1', name: 'add_task', args }],
-					raw: [{ id: 'task-1', type: 'function', function: { name: 'add_task', arguments: JSON.stringify(args) } }],
-					thinking: ''
-				};
+	it('expands the tool list for an action outside the initial shortlist', async () => {
+		const catalog = [
+			...Array.from({ length: 35 }, (_, index) => ({
+				name: `unrelated_${index}`,
+				description: '',
+				inputSchema: { type: 'object' }
+			})),
+			{ name: 'record_measurement', description: 'Record a measurement.', inputSchema: { type: 'object' } }
+		];
+		const seen: string[][] = [];
+		const called: string[] = [];
+		const model: Llm = {
+			model: 'synthetic',
+			async chat(_messages, tools) {
+				seen.push(tools.map((item) => item.function.name));
+				if (seen.length === 1) return { content: 'I have no such tool.', toolCalls: [], raw: [], thinking: '' };
+				if (seen.length === 2) {
+					const raw = [
+						{
+							id: 'measurement',
+							type: 'function' as const,
+							function: { name: 'record_measurement', arguments: '{}' }
+						}
+					];
+					return {
+						content: '',
+						toolCalls: [{ id: 'measurement', name: 'record_measurement', args: {} }],
+						raw,
+						thinking: ''
+					};
+				}
+				return { content: 'Recorded.', toolCalls: [], raw: [], thinking: '' };
 			},
 			async check() {
 				return null;
@@ -164,71 +212,29 @@ describe('a turn', () => {
 				return [];
 			}
 		};
-		const focused = new Assistant({
+		const expanded = new Assistant({
 			name: 'Onto',
-			language: 'pt-BR',
+			language: 'en',
 			appUrl: 'https://app.example',
 			confirm: DEFAULT_CONFIRM,
 			historyTurns: 3,
 			maxToolRounds: 4,
-			llm: scripted,
+			llm: model,
 			stt: fakeStt,
 			tts: fakeTts,
 			mcp: {
-				async call(name, args) {
-					calls.push({ name, args });
-					const structured = name === 'add_task' ? { id: 21 } : { ok: true };
-					return { ok: true, text: JSON.stringify(structured), structured };
+				async call(name) {
+					called.push(name);
+					return { ok: true, text: '{"ok":true}', structured: { ok: true } };
 				}
 			},
-			tools: () => [
-				...offeredTools(FAKE_TOOLS, ['add_task'], 300),
-				{
-					name: 'change_task',
-					description: 'Change task ratings.',
-					inputSchema: { type: 'object', properties: { id: { type: 'integer' } } }
-				}
-			],
+			tools: () => catalog,
 			history
 		});
-		await collect((emit) =>
-			focused.turn(
-				'pixel',
-				{
-					text: 'cria uma task: organizar arquivos. tag: teste. Urgência 4, facilidade 5, interesse 1',
-					speak: false
-				},
-				emit
-			)
-		);
-		expect(calls).toEqual([
-			{ name: 'add_task', args: { title: 'organizar arquivos', tags: 'teste' } },
-			{ name: 'change_task', args: { id: 21, urgency: 4, ease: 5, interest: 1 } }
-		]);
-	});
-
-	it('does not auto-apply ratings when change_task requires confirmation', async () => {
-		const guarded = new Assistant({
-			name: 'Onto',
-			language: 'en',
-			appUrl: 'https://app.example',
-			confirm: ['change_task'],
-			historyTurns: 3,
-			maxToolRounds: 4,
-			llm,
-			stt: fakeStt,
-			tts: fakeTts,
-			mcp: app,
-			tools: () => [
-				...offeredTools(FAKE_TOOLS, ['add_task'], 300),
-				{ name: 'change_task', description: '', inputSchema: { type: 'object' } }
-			],
-			history
-		});
-		await collect((emit) =>
-			guarded.turn('pixel', { text: 'add a task: organize files. Urgency 4', speak: false }, emit)
-		);
-		expect(app.calls.map((item) => item.name)).toEqual(['add_task']);
+		await collect((emit) => expanded.turn('pixel', { text: 'registre uma medição', speak: false }, emit));
+		expect(seen[0]).not.toContain('record_measurement');
+		expect(seen[1]).toContain('record_measurement');
+		expect(called).toEqual(['record_measurement']);
 	});
 
 	it('transcribes audio first and shows the words', async () => {

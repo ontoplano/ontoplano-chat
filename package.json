@@ -1,6 +1,6 @@
 {
 	"name": "ontoplano-chat",
-	"version": "0.1.14",
+	"version": "0.1.15",
 	"private": true,
 	"description": "A voice and text assistant for Ontoplano using MCP tools and a configurable model API.",
 	"type": "module",

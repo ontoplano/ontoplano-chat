@@ -9,7 +9,7 @@ A voice and text assistant for [Ontoplano](https://app.ontoplano.com). Speak or 
 - **Visible actions:** replies include links to the records changed in Ontoplano; the journal records model rounds and tool results.
 - **Voice on your terms:** use the speaker button to mute replies. Browser and local voice options are available.
 - **Optional traces:** Langfuse records model and MCP spans when configured. Evaluations use synthetic Ontoplano data.
-- **Shared agent rules:** [AGENT.md](AGENT.md) is included in every model turn, regardless of provider.
+- **Runtime instructions:** [ASSISTANT_INSTRUCTIONS.md](ASSISTANT_INSTRUCTIONS.md) is sent to every configured model. The MCP server supplies the token's account or notebook boundary and its own tool guidance.
 
 ```text
 Browser or phone  →  ontoplano-chat  →  Ollama, Claude, OpenAI, or another compatible model

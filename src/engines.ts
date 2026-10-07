@@ -60,14 +60,14 @@ export class ToolBox {
 		}
 	}
 
-	/** Keep them fresh: hourly once loaded, every half minute until then. */
-	start(): void {
+	/** Load before serving, then keep them fresh: hourly when healthy, every half minute after an error. */
+	async start(): Promise<void> {
 		const tick = async (): Promise<void> => {
 			const ok = await this.load();
 			this.timer = setTimeout(tick, ok ? TOOLS_REFRESH_MS : 30_000);
 			this.timer.unref();
 		};
-		void tick();
+		await tick();
 	}
 
 	stop(): void {

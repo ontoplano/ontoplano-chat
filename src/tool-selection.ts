@@ -34,36 +34,13 @@ export function selectTools(request: string, all: readonly McpTool[]): McpTool[]
 	return chosen.slice(0, MAX_TOOLS_PER_TURN);
 }
 
-/** A narrow retry is warranted only when the person plainly asked to create something. */
-export function creationTool(request: string, all: readonly McpTool[]): McpTool | undefined {
+/** One expanded retry when the person asked for an action but the model used no tool. */
+export function requestsAction(request: string): boolean {
 	const words = normalize(request);
-	if (/\b(?:nao|not|do not|don't)\s+(?:crie|cria|criar|escreva|escreve|create|write|add)\b/.test(words)) return;
-	const create = /\b(cria|crie|criar|adiciona|adicione|adicionar|create|add|make|faz|faca)\b/.test(words);
-	const write = /\b(escreve|escreva|escrever|anota|anote|write)\b/.test(words);
-	if (create && /\b(task|tarefa|todo)\b/.test(words)) return all.find((tool) => tool.name === 'add_task');
-	if ((create || write) && /\b(nota|note|entry|caderno|notebook)\b/.test(words))
-		return all.find((tool) => tool.name === 'write_entry');
-	if (write && /\b(qualquer coisa|anything)\b/.test(words)) return all.find((tool) => tool.name === 'write_entry');
-	return;
-}
-
-/** Explicit task fields are safe to carry through even if a model drops them. */
-export function taskFields(request: string): {
-	tags?: string;
-	ratings: Partial<Record<'urgency' | 'ease' | 'interest', number>>;
-} {
-	const normalized = normalize(request);
-	const ratings: Partial<Record<'urgency' | 'ease' | 'interest', number>> = {};
-	for (const [field, names] of [
-		['urgency', 'urgencia|urgency'],
-		['ease', 'facilidade|ease'],
-		['interest', 'interesse|interest']
-	] as const) {
-		const match = new RegExp(`\\b(?:${names})\\s*[:=]?\\s*([0-5])\\b`).exec(normalized);
-		if (match) ratings[field] = Number(match[1]);
-	}
-	const tag = /\btag(?:s)?\s*[:=]?\s*([\p{L}\p{N}_-]+)/iu.exec(request);
-	return { ...(tag ? { tags: tag[1] } : {}), ratings };
+	const verbs =
+		/\b(add|create|write|make|update|change|edit|delete|remove|move|schedule|mark|log|record|set|archive|reopen|cria|crie|criar|adiciona|adicione|escreve|escreva|anota|altera|muda|marca|registra|registre|agenda|apaga|exclui|arquiva|reabre|faca)\b/;
+	if (/\b(nao|not|do not|don't)\s+/.test(words.slice(0, 30))) return false;
+	return verbs.test(words);
 }
 
 export function asksAboutAccess(text: string): boolean {

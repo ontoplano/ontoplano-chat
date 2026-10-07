@@ -109,11 +109,12 @@ async function serve(): Promise<number> {
 		tts: engines.tts,
 		mcp: engines.mcp,
 		tools: () => engines.tools.current(),
+		mcpContext: () => (engines.mcp instanceof OntoplanoMcp ? engines.mcp.context : { instructions: '', access: null }),
 		history,
 		log: stamp,
 		telemetry
 	});
-	engines.tools.start();
+	await engines.tools.start();
 	const server = createHttpServer({ config: c, devices, assistant, history, engines, version: VERSION, log: stamp });
 	await new Promise<void>((resolve, reject) => {
 		server.once('error', reject);

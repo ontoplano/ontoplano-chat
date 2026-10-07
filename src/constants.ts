@@ -26,6 +26,9 @@ export const MCP_PATH = '/api/mcp';
 /** The MCP protocol version this client speaks. */
 export const MCP_PROTOCOL_VERSION = '2025-03-26';
 
+/** An MCP request should not leave startup or a turn waiting indefinitely. */
+export const MCP_REQUEST_TIMEOUT_MS = 30_000;
+
 /** How this client introduces itself to the app. */
 export const MCP_CLIENT_INFO = { name: 'ontoplano-chat', version: VERSION };
 

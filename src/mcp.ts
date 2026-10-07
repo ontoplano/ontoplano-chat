@@ -9,7 +9,7 @@
  * The token is the account. It is held here and nowhere else: never in a
  * log, never in an answer to the phone.
  */
-import { MCP_CLIENT_INFO, MCP_PATH, MCP_PROTOCOL_VERSION } from './constants.js';
+import { MCP_CLIENT_INFO, MCP_PATH, MCP_PROTOCOL_VERSION, MCP_REQUEST_TIMEOUT_MS } from './constants.js';
 
 export type McpTool = {
 	name: string;
@@ -23,6 +23,11 @@ export type ToolResult = {
 	text: string;
 	/** The same, parsed, when it parses. */
 	structured: unknown;
+};
+
+export type McpContext = {
+	instructions: string;
+	access: { kind: string; id?: number; label?: string } | null;
 };
 
 /** The shape an OpenAI-compatible model takes a tool in. */
@@ -45,6 +50,7 @@ type Rpc = { jsonrpc: '2.0'; id?: number; result?: unknown; error?: { code: numb
 export class OntoplanoMcp {
 	private nextId = 1;
 	private initialized = false;
+	private serverContext: McpContext = { instructions: '', access: null };
 
 	constructor(
 		private readonly appUrl: string,
@@ -56,10 +62,15 @@ export class OntoplanoMcp {
 		return `${this.appUrl}${MCP_PATH}`;
 	}
 
+	get context(): McpContext {
+		return this.serverContext;
+	}
+
 	private async rpc(method: string, params: unknown): Promise<unknown> {
 		const id = this.nextId++;
 		const res = await this.fetchImpl(this.endpoint, {
 			method: 'POST',
+			signal: AbortSignal.timeout(MCP_REQUEST_TIMEOUT_MS),
 			headers: {
 				'Content-Type': 'application/json',
 				Accept: 'application/json, text/event-stream',
@@ -80,11 +91,23 @@ export class OntoplanoMcp {
 
 	async initialize(): Promise<void> {
 		if (this.initialized) return;
-		await this.rpc('initialize', {
+		const result = (await this.rpc('initialize', {
 			protocolVersion: MCP_PROTOCOL_VERSION,
 			capabilities: {},
 			clientInfo: MCP_CLIENT_INFO
-		});
+		})) as { instructions?: unknown; _access?: unknown } | null;
+		const access = result?._access;
+		this.serverContext = {
+			instructions: typeof result?.instructions === 'string' ? result.instructions : '',
+			access:
+				access && typeof access === 'object' && 'kind' in access && typeof access.kind === 'string'
+					? {
+							kind: access.kind,
+							...('id' in access && typeof access.id === 'number' ? { id: access.id } : {}),
+							...('label' in access && typeof access.label === 'string' ? { label: access.label } : {})
+						}
+					: null
+		};
 		this.initialized = true;
 	}
 

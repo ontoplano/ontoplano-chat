@@ -184,11 +184,15 @@ optional `[langfuse]`. Data
 lives in `~/.local/share/ontoplano-chat/`: `devices.json` (hashes),
 `pairing.json` (a hashed code, briefly), `turns.jsonl` (the log).
 
-[`AGENT.md`](../AGENT.md) contains the model-independent behavior rules.
-The server loads it at startup and includes it in every model turn. Edit it
-in your checkout and restart Chat to change how the assistant acts; never put
-tokens or other secrets in this tracked file. The app's token and the actual
-MCP tool list still determine what actions are possible. For a smaller model,
+[`ASSISTANT_INSTRUCTIONS.md`](../ASSISTANT_INSTRUCTIONS.md) contains the
+runtime behavior rules, distinct from the repository's `AGENTS.md` for
+developers. Chat loads it at startup and includes it in every model turn,
+along with the MCP server's instructions and its reported account or notebook
+access boundary. The token and actual MCP tool list determine what actions
+are possible. Edit the runtime instructions in your checkout and restart Chat
+to change behavior; never put tokens or other secrets in this tracked file.
+Older Ontoplano servers do not report the boundary, so Chat says it is unknown.
+For a smaller model,
 lower `[assistant].history_turns` to reduce context and latency; use `make eval`
 with selected cases to compare behavior before relying on a model.
 
