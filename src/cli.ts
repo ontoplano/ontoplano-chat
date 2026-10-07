@@ -2,6 +2,9 @@
  * The command: `ontoplano-chat <verb>`.
  *
  *   serve      run the server (the systemd unit's ExecStart)
+ *   stop       stop the systemd user service
+ *   install-service   install and start the systemd user service
+ *   langfuse-check    test the Langfuse URL and project keys
  *   pair       print a code for a device to type — ten minutes, one use
  *   devices    the devices that are paired
  *   revoke     forget one, by name
@@ -26,6 +29,7 @@ import { kokoroLanguageOf, kokoroVoiceFor, OLLAMA_INSTALL, PROVIDERS, SPEACHES_R
 import { buildEngines } from './engines.js';
 import { History } from './history.js';
 import { langfuseTelemetry } from './observability.js';
+import { checkLangfuse } from './langfuse-check.js';
 import { Devices } from './pairing.js';
 import { createHttpServer } from './server.js';
 import { Assistant } from './turn.js';
@@ -40,6 +44,9 @@ const HELP = `ontoplano-chat ${VERSION} — a local voice assistant for ontoplan
   ontoplano-chat setup      the six questions: the app, the model, the ears, the voice, the name, how a device reaches it
   ontoplano-chat setup <step>   one of them again: app · model · ears · voice · assistant · reach
   ontoplano-chat serve      run the server
+  ontoplano-chat stop       stop the user service (Ctrl-C stops a foreground server)
+  ontoplano-chat install-service   install and start the systemd user service
+  ontoplano-chat langfuse-check    test the Langfuse URL and project keys
   ontoplano-chat pair       print a pairing code for a device (ten minutes, one use)
   ontoplano-chat devices    the paired devices
   ontoplano-chat revoke <name>
@@ -528,6 +535,16 @@ export async function main(argv: string[]): Promise<number> {
 			return setup(rest[0]);
 		case 'serve':
 			return serve();
+		case 'stop':
+			if (!has('systemctl')) {
+				err('systemctl is unavailable; press Ctrl-C in the terminal running serve');
+				return 1;
+			}
+			return (await shell('systemctl --user stop ontoplano-chat')) ? 0 : 1;
+		case 'install-service':
+			return (await installService()) ? 0 : 1;
+		case 'langfuse-check':
+			return checkLangfuse();
 		case 'pair':
 			return pair();
 		case 'devices':

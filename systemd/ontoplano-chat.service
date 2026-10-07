@@ -19,6 +19,7 @@ ExecStart=/usr/bin/env node bin/ontoplano-chat.mjs serve
 Restart=on-failure
 RestartSec=3
 Environment=NODE_ENV=production
+EnvironmentFile=-%h/.config/ontoplano-chat/langfuse.env
 # The token may live here instead of in the config file:
 # Environment=ONTOPLANO_MCP_TOKEN=…
 NoNewPrivileges=true

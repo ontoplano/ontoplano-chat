@@ -11,7 +11,7 @@
 include defaults.env
 
 .DEFAULT_GOAL := help
-.PHONY: help setup stack build link dev serve demo pair devices doctor config test test-unit test-e2e eval eval-langfuse eval-check lint format icons install-service uninstall-service logs
+.PHONY: help setup stack build link dev serve demo pair devices doctor langfuse-check config test test-unit test-e2e eval eval-langfuse eval-check lint format icons install-service uninstall-service logs
 
 help:
 	@echo "ontoplano-chat — the local voice assistant for ontoplano"
@@ -24,6 +24,7 @@ help:
 	@echo "  make stack             bring up Ollama and its model, the Speaches container(s) and their models"
 	@echo "  make doctor            check the model, the ears, the voice and the app"
 	@echo "  make install-service   run it as a user service from now on (make logs follows it)"
+	@echo "  make langfuse-check    check the Langfuse URL and project keys"
 	@echo "  make test              unit tests, then the browser suite"
 	@echo "  make eval              run the 29-case agent evaluation against a model and synthetic app data"
 	@echo "  make eval-langfuse     run the same cases as a Langfuse experiment"
@@ -73,6 +74,9 @@ devices: build
 
 doctor: build
 	@node bin/ontoplano-chat.mjs doctor
+
+langfuse-check: build
+	@node bin/ontoplano-chat.mjs langfuse-check
 
 config: build
 	@node bin/ontoplano-chat.mjs config

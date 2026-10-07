@@ -139,6 +139,9 @@ says what to do under anything that fails.
 ontoplano-chat setup      the six questions; writes the config, prints a pairing code
 ontoplano-chat setup <step>   one of them again: app · model · ears · voice · assistant · reach
 ontoplano-chat serve      run the server
+ontoplano-chat stop       stop the systemd user service; Ctrl-C stops a foreground server
+ontoplano-chat install-service   install, enable and start the systemd user service
+ontoplano-chat langfuse-check    check Langfuse reachability and project keys
 ontoplano-chat pair       print a pairing code (ten minutes, one use)
 ontoplano-chat devices    the paired phones
 ontoplano-chat revoke <name>
@@ -147,8 +150,11 @@ ontoplano-chat doctor     check the model, the ears, the voice and the app
 ontoplano-chat config     print-and-write a commented example of every key
 ```
 
-`make install-service` runs it as a systemd user unit (`make logs` follows
-it; `loginctl enable-linger $USER` keeps it up when you are logged out).
+`ontoplano-chat install-service` works after the one-line install;
+`make install-service` does the same from a checkout. `ontoplano-chat stop`
+stops the user service, and `systemctl --user start ontoplano-chat` starts it
+again. `journalctl --user -u ontoplano-chat -f` follows its logs;
+`loginctl enable-linger $USER` keeps it up when you are logged out.
 `make demo` runs it with fake engines — no model, no ears, no app — so the
 page can be looked at on any machine.
 
@@ -189,14 +195,7 @@ LANGFUSE_BASE_URL=http://127.0.0.1:3000
 
 Use `127.0.0.1:3000` when ontoplano-chat runs on the same host as Langfuse's published port. If they run in separate containers, use a hostname reachable from the chat container. The base URL is the Langfuse web/API origin, without `/api/public` or `/api/public/otel`. If omitted, the SDK sends to Langfuse Cloud, so set it for a self-hosted instance. The keys and URL are never put in `ontoplano-chat/config.toml`.
 
-For the installed user service, save those three lines in `~/.config/ontoplano-chat/langfuse.env`, make it private with `chmod 600`, and add this systemd user-service drop-in with `systemctl --user edit ontoplano-chat`:
-
-```ini
-[Service]
-EnvironmentFile=%h/.config/ontoplano-chat/langfuse.env
-```
-
-Then run `systemctl --user daemon-reload && systemctl --user restart ontoplano-chat`. For a foreground `make serve` or `make eval-langfuse`, export the same variables in that shell. Without both keys, tracing is off and the assistant works normally. The server flushes traces on shutdown. An unavailable Langfuse endpoint does not gate a reply.
+For the installed user service, save those three lines in `~/.config/ontoplano-chat/langfuse.env`, make it private with `chmod 600`, then run `ontoplano-chat install-service` to install the current unit with that environment file. Later key changes need only `systemctl --user restart ontoplano-chat`. Run `ontoplano-chat langfuse-check` to verify the URL and keys; it reads this file automatically and sends no trace. This checks authentication, not trace ingestion. To confirm a trace appears, export the variables in a shell and run `make eval-langfuse` from the checkout, or use the assistant and inspect the Langfuse UI. For a foreground `make serve`, export the variables in that shell. Without both keys, tracing is off and the assistant works normally. The server flushes traces on shutdown. An unavailable Langfuse endpoint does not gate a reply.
 
 One interaction is an agent observation, with child observations for each model generation and each client-side MCP call. The trace includes a random conversation session ID, input, output, model name, model server hostname, call arguments and results, failures, and provider-reported token usage. Confirmation creates a separate interaction in the same conversation; it never executes the destructive tool before approval. Langfuse may calculate cost for a model it knows. No cost is invented for unknown or local models.
 
@@ -204,7 +203,7 @@ Trace content may contain private task and note text. Use a Langfuse instance yo
 
 ### Agent evaluations
 
-`make eval` runs 29 synthetic cases through the real model and agent loop. It never loads your Ontoplano config, token, MCP server, or account. Changing `[ontoplano].url` from `app.ontoplano.com` to `localhost:1493` does **not** change an eval run. A fresh in-memory synthetic tool backend and temporary turn history are used for each case. The model defaults to `http://127.0.0.1:11434/v1` and `qwen3.5:9b`; set `EVAL_MODEL_URL`, `EVAL_MODEL_NAME`, and optionally `EVAL_MODEL_API_KEY` to test another OpenAI-compatible model. The model endpoint is the only network target. The command prints both endpoints, the model probe, per-round and per-tool durations, each case's elapsed time, and reasons for failures. `make eval-check` validates the case list and tool definitions without contacting a model.
+`make eval` runs 29 synthetic cases through the real model and agent loop. It never loads your Ontoplano config, token, MCP server, or account. Changing `[ontoplano].url` from `app.ontoplano.com` to `localhost:1493` does **not** change an eval run. A fresh in-memory synthetic tool backend and temporary turn history are used for each case. The model defaults to `http://127.0.0.1:11434/v1` and `qwen3.5:9b`; set `EVAL_MODEL_URL`, `EVAL_MODEL_NAME`, and optionally `EVAL_MODEL_API_KEY` to test another OpenAI-compatible model. Without Langfuse keys, the model endpoint is the only network target. The command prints both endpoints, the model probe, per-round and per-tool durations, each case's elapsed time, and reasons for failures. `make eval-check` validates the case list and tool definitions without contacting a model.
 
 To investigate a few failures without repeating the full run, use `EVAL_CASES=today,recurring-add,goals-add,goals-progress,workouts-read make eval`. The summary then covers only those selected cases. A failed case prints its expected and observed calls and the reason it failed.
 
