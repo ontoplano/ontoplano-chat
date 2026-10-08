@@ -411,6 +411,15 @@ export class Assistant {
 	): Promise<boolean> {
 		for (let i = 0; i < calls.length; i++) {
 			const call = calls[i] as ToolCall;
+			if (call.name === 'tools/list' && !this.isOffered(call.name, selected)) {
+				this.log(`[${device}] model requested MCP discovery; using the offered tool schemas`);
+				messages.push({
+					role: 'tool',
+					tool_call_id: call.id,
+					content: `tools/list is an MCP protocol method, not a callable tool. The client already listed the tools. Call one of these offered tools using its schema: ${selected.map((tool) => tool.name).join(', ')}.`
+				});
+				continue;
+			}
 			if (this.needsConfirmation(call.name) && this.isOffered(call.name, selected)) {
 				const id = randomUUID();
 				c.pending = {

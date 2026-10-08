@@ -264,6 +264,77 @@ describe('a turn', () => {
 		expect(app.calls).toEqual([]);
 	});
 
+	it('redirects MCP discovery to the offered task tool without showing an error', async () => {
+		const seen: string[][] = [];
+		const model: Llm = {
+			model: 'synthetic-discovery',
+			async chat(messages, tools) {
+				seen.push(tools.map((tool) => tool.function.name));
+				if (seen.length === 1) {
+					expect(messages[0]?.content).toContain('tools/list');
+					return {
+						content: '',
+						toolCalls: [{ id: 'discovery', name: 'tools/list', args: {} }],
+						raw: [{ id: 'discovery', type: 'function', function: { name: 'tools/list', arguments: '{}' } }],
+						thinking: ''
+					};
+				}
+				if (seen.length === 2) {
+					expect(messages.at(-1)).toMatchObject({
+						role: 'tool',
+						tool_call_id: 'discovery',
+						content: expect.stringContaining('tasks')
+					});
+					return {
+						content: '',
+						toolCalls: [{ id: 'open-tasks', name: 'tasks', args: { status: 'open' } }],
+						raw: [
+							{
+								id: 'open-tasks',
+								type: 'function',
+								function: { name: 'tasks', arguments: '{"status":"open"}' }
+							}
+						],
+						thinking: ''
+					};
+				}
+				return { content: 'Você tem tarefas em aberto.', toolCalls: [], raw: [], thinking: '' };
+			},
+			async check() {
+				return null;
+			},
+			async pull() {
+				return null;
+			},
+			async models() {
+				return [];
+			}
+		};
+		const focused = new Assistant({
+			name: 'Onto',
+			language: 'pt-BR',
+			appUrl: 'https://app.example',
+			confirm: DEFAULT_CONFIRM,
+			historyTurns: 3,
+			maxToolRounds: 4,
+			llm: model,
+			stt: fakeStt,
+			tts: fakeTts,
+			mcp: app,
+			tools: () => offeredTools(FAKE_TOOLS, OFFERED, 300),
+			history
+		});
+		const events = await collect((emit) =>
+			focused.turn('pixel', { text: 'tem alguma tarefa em aberto?', speak: false }, emit)
+		);
+		expect(seen[0]).toContain('tasks');
+		expect(app.calls.map((call) => call.name)).toEqual(['tasks']);
+		expect(events.filter((event) => event.type === 'action' && event.status === 'failed')).toEqual([]);
+		expect(events.find((event) => event.type === 'reply')).toMatchObject({
+			text: 'Você tem tarefas em aberto.'
+		});
+	});
+
 	it('remembers the last turns, as words only', async () => {
 		await collect((emit) => assistant.turn('pixel', { text: 'hello' }, emit));
 		await collect((emit) => assistant.turn('pixel', { text: 'add a task: one' }, emit));
